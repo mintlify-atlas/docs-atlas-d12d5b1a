@@ -1,0 +1,306 @@
+---
+title: "XML configuration"
+description: "How JSBSim uses XML to define aircraft, engines, systems, and flight scripts — file types, top-level structure, and schema validation."
+---
+
+## Overview
+
+JSBSim describes aircraft, engines, systems, and simulation runs entirely through XML files. When you call `LoadModel()` or `LoadScript()`, `FGFDMExec` parses the relevant XML and invokes the `Load()` method on each model. No recompilation is needed to define a new aircraft or change a control law.
+
+The XML dialect used by JSBSim is called **JSBSim-ML** (JSBSim Markup Language). Version 2.0 is the current format, validated by the schemas in the repository root.
+
+## File types
+
+<CardGroup cols={2}>
+  <Card title="Aircraft definition" icon="plane">
+    The primary file for an aircraft model. Root element is `<fdm_config>`. Contains geometry, mass, aerodynamics, propulsion, flight controls, and output directives.
+
+    Example path: `aircraft/p51d/p51d.xml`
+  </Card>
+  <Card title="Engine config" icon="engine">
+    Defines a single engine or thruster. Referenced by name from the aircraft `<propulsion>` section.
+
+    Example path: `aircraft/p51d/Engines/Packard-V-1650-7.xml`
+  </Card>
+  <Card title="Systems files" icon="sliders">
+    Modular FCS, autopilot, or system channel definitions. Referenced from the aircraft file with `<system file="..."/>`.
+
+    Example path: `aircraft/f104/Systems/FCS-pitch.xml`
+  </Card>
+  <Card title="Flight scripts" icon="scroll">
+    Defines a simulation run: which aircraft and initial conditions to use, the simulation time range and time step, and a sequence of timed events that set properties.
+
+    Example path: `scripts/c172_cruise_8K.xml`
+  </Card>
+</CardGroup>
+
+## Aircraft definition file structure
+
+An aircraft file's root element is `<fdm_config>` with required attributes `name` and `version`, and an optional `release` attribute (`PRODUCTION`, `ALPHA`, or `BETA`).
+
+```xml
+<?xml version="1.0"?>
+<fdm_config name="P-51D (JSBSim)" version="2.0" release="BETA"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://jsbsim.sourceforge.net/JSBSim.xsd">
+
+  <fileheader>
+    <author>Aeromatic / Jon Berndt / DATCOM / Hal V. Engel</author>
+    <filecreationdate>2001-01-01</filecreationdate>
+    <version>$Revision: 1.23 $</version>
+    <description>Advanced model of P-51D fighter (Beta)</description>
+  </fileheader>
+
+  <metrics> ... </metrics>
+  <mass_balance> ... </mass_balance>
+  <ground_reactions> ... </ground_reactions>
+  <propulsion> ... </propulsion>
+  <flight_control name="P-51D FCS"> ... </flight_control>
+  <aerodynamics> ... </aerodynamics>
+  <output> ... </output>
+
+</fdm_config>
+```
+
+The sections are parsed in document order but the XSD schema (`JSBSim.xsd`) defines the required sequence.
+
+### Top-level sections
+
+<AccordionGroup>
+  <Accordion title="metrics — geometric data">
+    Defines the aircraft's reference geometry: wing area, span, chord, and the locations of the aerodynamic reference point, eye point, and visual reference point.
+
+    ```xml
+    <metrics>
+      <wingarea unit="FT2"> 235 </wingarea>
+      <wingspan  unit="FT">  37.1 </wingspan>
+      <chord     unit="FT">   6.6 </chord>
+      <htailarea unit="FT2">  41 </htailarea>
+      <htailarm  unit="FT">  15 </htailarm>
+      <location name="AERORP" unit="IN">
+        <x> 99 </x>
+        <y>  0 </y>
+        <z>-26.5</z>
+      </location>
+    </metrics>
+    ```
+  </Accordion>
+
+  <Accordion title="mass_balance — weight and inertia">
+    Sets the empty weight, inertia tensor (Ixx, Iyy, Izz, and cross products), CG location, and point masses for crew, fuel tanks, and stores. Point masses can change in flight by binding their weight to a property.
+
+    ```xml
+    <mass_balance>
+      <ixx unit="SLUG*FT2"> 8031  </ixx>
+      <iyy unit="SLUG*FT2"> 9274  </iyy>
+      <izz unit="SLUG*FT2"> 14547 </izz>
+      <emptywt unit="LBS">  7125  </emptywt>
+      <location name="CG" unit="IN">
+        <x> 96.5 </x>
+        <y>    0 </y>
+        <z>   -9 </z>
+      </location>
+      <pointmass name="pilot">
+        <weight unit="LBS"> 180 </weight>
+        <location unit="IN">
+          <x> 98 </x>
+          <y>  0 </y>
+          <z> 15 </z>
+        </location>
+      </pointmass>
+    </mass_balance>
+    ```
+  </Accordion>
+
+  <Accordion title="ground_reactions — landing gear">
+    Describes each gear leg or contact point as an `<contact>` element, specifying type (`BOGEY` or `STRUCTURE`), location, spring and damping coefficients, and friction.
+
+    ```xml
+    <ground_reactions>
+      <contact type="BOGEY" name="Tail Gear">
+        <location unit="IN">
+          <x> 14.8 </x>
+          <y>  0   </y>
+          <z>-36.4 </z>
+        </location>
+        <static_friction>  0.8 </static_friction>
+        <dynamic_friction> 0.5 </dynamic_friction>
+        <spring_coeff  unit="LBS/FT"> 600  </spring_coeff>
+        <damping_coeff unit="LBS/FT/SEC"> 100 </damping_coeff>
+      </contact>
+    </ground_reactions>
+    ```
+  </Accordion>
+
+  <Accordion title="propulsion — engines and thrusters">
+    Lists `<engine>` elements, each referencing an engine config file by name and a thruster config file. Engine location, orientation, and feed tank assignments are also specified here.
+
+    ```xml
+    <propulsion>
+      <engine file="Packard-V-1650-7">
+        <location unit="IN">
+          <x> 45 </x>
+          <y>  0 </y>
+          <z>  0 </z>
+        </location>
+        <orient unit="DEG">
+          <pitch> 0 </pitch>
+          <roll>  0 </roll>
+          <yaw>   0 </yaw>
+        </orient>
+        <thruster file="P51prop">
+          <location unit="IN">
+            <x> 9 </x>
+            <y> 0 </y>
+            <z> 0 </z>
+          </location>
+        </thruster>
+      </engine>
+    </propulsion>
+    ```
+  </Accordion>
+
+  <Accordion title="flight_control / autopilot / system">
+    Defines control law channels as ordered lists of FCS components (summers, gains, filters, limiters, actuators). The `file` attribute lets you split channels into separate XML files under the aircraft's `Systems/` directory.
+
+    ```xml
+    <flight_control name="X-15 SAS">
+      <channel name="Pitch">
+        <summer name="Pitch Trim Sum">
+          <input> fcs/elevator-cmd-norm </input>
+          <input> fcs/pitch-trim-cmd-norm </input>
+          <clipto>
+            <min>-1</min>
+            <max> 1</max>
+          </clipto>
+        </summer>
+        <aerosurface_scale name="Pitch Command Scale">
+          <input> fcs/pitch-trim-sum </input>
+          <range>
+            <min>-50</min>
+            <max> 50</max>
+          </range>
+        </aerosurface_scale>
+      </channel>
+    </flight_control>
+    ```
+  </Accordion>
+
+  <Accordion title="aerodynamics — force and moment coefficients">
+    Organizes aerodynamic functions into axes: `<axis name="LIFT">`, `<axis name="DRAG">`, `<axis name="SIDE">`, `<axis name="ROLL">`, `<axis name="PITCH">`, `<axis name="YAW">`. Each axis contains `<function>` elements that compute the coefficient contribution using lookup tables (`<table>`), math functions, and property references.
+
+    ```xml
+    <aerodynamics>
+      <alphalimits unit="DEG">
+        <min>-20</min>
+        <max> 25</max>
+      </alphalimits>
+      <axis name="LIFT">
+        <function name="aero/coefficient/CLalpha">
+          <description>Lift due to alpha</description>
+          <product>
+            <property> aero/qbar-area </property>
+            <table>
+              <independentVar> aero/alpha-rad </independentVar>
+              <tableData>
+                -0.349   -0.890
+                 0.000    0.200
+                 0.436    1.400
+              </tableData>
+            </table>
+          </product>
+        </function>
+      </axis>
+    </aerodynamics>
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Flight script files
+
+A flight script controls a simulation run without requiring any code changes. The root element is `<runscript>`. You specify which aircraft to use, initial conditions, the time range, and a list of timed `<event>` elements that set properties when conditions are met.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<runscript xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://jsbsim.sf.net/JSBSimScript.xsd"
+    name="C172 cruise at 4K, 100% power">
+
+  <description>
+    Test the C172 altitude hold autopilot and cruise performance
+  </description>
+  <use aircraft="c172x" initialize="reset01"/>
+
+  <run start="0.0" end="40" dt="0.0083333">
+
+    <event name="Start engine">
+      <condition>
+        simulation/sim-time-sec ge 0.01
+      </condition>
+      <set name="fcs/throttle-cmd-norm"
+           action="FG_RAMP" value="0.50" tc="0.05"/>
+      <set name="fcs/mixture-cmd-norm"
+           action="FG_RAMP" value="1.0"  tc="0.05"/>
+      <set name="propulsion/magneto_cmd" value="3"/>
+      <set name="propulsion/starter_cmd" value="1"/>
+      <notify/>
+    </event>
+
+    <event name="Hold heading and altitude">
+      <condition>simulation/sim-time-sec ge 5</condition>
+      <set name="ap/heading_setpoint"  value="200"/>
+      <set name="ap/heading_hold"      value="1"/>
+      <set name="ap/altitude_setpoint" value="4000.0"/>
+      <set name="ap/altitude_hold"     value="1"/>
+      <notify/>
+    </event>
+
+  </run>
+</runscript>
+```
+
+<Note>
+  The `<use aircraft="...">` element specifies the aircraft model name (not the full path). JSBSim looks for `aircraft/<name>/<name>.xml` relative to the root directory. The `initialize` attribute names an initial-conditions reset file in the same aircraft directory.
+</Note>
+
+## Schema validation
+
+The repository includes XSD schemas that you can use to validate XML files before loading them:
+
+| Schema file | Validates |
+|---|---|
+| `JSBSim.xsd` | Aircraft definition files (`<fdm_config>`) |
+| `JSBSimScript.xsd` | Flight script files (`<runscript>`) |
+| `JSBSimCommon.xsd` | Shared types included by the other schemas |
+
+To validate an aircraft file with `xmllint`:
+
+```bash
+xmllint --noout --schema JSBSim.xsd aircraft/p51d/p51d.xml
+```
+
+<Tip>
+  Setting `release="ALPHA"` or `release="BETA"` on `<fdm_config>` causes JSBSim to print a warning on startup reminding you that the model may not yet be of production quality.
+</Tip>
+
+## Directory layout
+
+A typical JSBSim data tree follows this layout:
+
+```
+jsbsim-root/
+├── aircraft/
+│   └── c172p/
+│       ├── c172p.xml          # Aircraft definition
+│       ├── reset00.xml        # Initial conditions
+│       ├── Engines/
+│       │   └── IO360.xml      # Engine config
+│       └── Systems/
+│           └── c172p-ap.xml   # Autopilot system
+├── engine/                    # Shared engine configs
+├── systems/                   # Shared system configs
+└── scripts/
+    └── c172_cruise_8K.xml     # Flight script
+```
+
+`FGFDMExec` resolves paths relative to the root directory set by `SetRootDir()`. The aircraft, engine, and systems paths can each be overridden individually via `SetAircraftPath()`, `SetEnginePath()`, and `SetSystemsPath()`.

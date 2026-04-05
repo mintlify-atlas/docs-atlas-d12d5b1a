@@ -1,0 +1,250 @@
+---
+title: "Example scripts"
+description: "Bundled JSBSim XML simulation scripts — what each one demonstrates and how to run them."
+---
+
+JSBSim simulation scripts are XML files that define a complete, repeatable simulation run: which aircraft to load, initial conditions, simulation duration, and a sequence of timed events that manipulate controls and log data. They let you run the same flight scenario identically every time without writing any code.
+
+## Running a script
+
+<Tabs>
+  <Tab title="Command line">
+    ```bash
+    JSBSim --script=scripts/c1721.xml
+    ```
+
+    You can override properties at the command line:
+
+    ```bash
+    JSBSim --script=scripts/c1723.xml --property=simulation/randomseed=42
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec(None)
+    fdm.load_script('scripts/c1721.xml')
+    fdm.run_ic()
+
+    while fdm.run():
+        pass
+    ```
+  </Tab>
+</Tabs>
+
+## Script XML structure
+
+A JSBSim script file uses the `<runscript>` root element. Here is a complete working script (`c1721.xml`) annotated to explain each element:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<runscript xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://jsbsim.sf.net/JSBSimScript.xsd"
+    name="C172-01A">
+
+  <!-- Which aircraft model and initial conditions file to load -->
+  <use aircraft="c172r" initialize="reset00"/>
+
+  <!-- Simulation time span and integration timestep (seconds) -->
+  <run start="0.0" end="10" dt="0.008333">
+
+    <!-- Events fire when their <condition> becomes true -->
+    <event name="event name">
+      <condition>simulation/sim-time-sec  ge  0.25</condition>
+      <!-- FG_STEP: step to value over tc seconds -->
+      <set name="fcs/aileron-cmd-norm" action="FG_STEP" value="0.25" tc="0.25"/>
+    </event>
+
+    <event name="event name">
+      <condition>simulation/sim-time-sec  ge  0.5</condition>
+      <!-- FG_EXP + FG_DELTA: exponential ramp, relative to current value -->
+      <set name="fcs/aileron-cmd-norm" action="FG_EXP" type="FG_DELTA" value="0.5" tc="0.5"/>
+    </event>
+
+    <event name="event name">
+      <condition>simulation/sim-time-sec  ge  1.5</condition>
+      <!-- FG_RAMP: linear ramp to value over tc seconds -->
+      <set name="fcs/rudder-cmd-norm" action="FG_RAMP" type="FG_DELTA" value="0.5" tc="0.5"/>
+    </event>
+
+    <event name="event name">
+      <condition>simulation/sim-time-sec  ge  1.5</condition>
+      <set name="fcs/elevator-cmd-norm" action="FG_RAMP" value="0.25" tc="0.5"/>
+    </event>
+
+    <event name="event name">
+      <condition>simulation/sim-time-sec  ge  2.5</condition>
+      <set name="fcs/elevator-cmd-norm" action="FG_EXP" type="FG_DELTA" value="0.5" tc="0.5"/>
+    </event>
+
+  </run>
+</runscript>
+```
+
+### Script elements reference
+
+| Element | Purpose |
+|---------|---------|
+| `<use aircraft="..." initialize="...">` | Selects the aircraft model folder and the `reset` initialization file inside it. |
+| `<run start end dt>` | Sets the simulation window. `dt` is the integration timestep in seconds (120 Hz = 0.008333 s). |
+| `<property value="...">` | Sets a property at simulation start, before events begin. |
+| `<event name="..." persistent="true">` | Defines a triggered action. `persistent="true"` means the event re-arms after it fires. |
+| `<condition>` | A boolean expression evaluated each timestep. Uses property names and operators `ge`, `le`, `gt`, `lt`, `eq`, `ne`. |
+| `<delay>` | Number of seconds to wait after the condition becomes true before firing the event. |
+| `<set name action value tc type>` | Sets a property. `action` controls the shape: `FG_STEP`, `FG_RAMP`, or `FG_EXP`. `type="FG_DELTA"` applies the value relative to the current property value. `tc` is the time constant in seconds. |
+| `<notify>` | Prints a snapshot of listed properties to stdout when the event fires. |
+
+## Bundled scripts
+
+<AccordionGroup>
+
+  <Accordion title="Cessna 172 scenarios">
+
+    Four scripts exercise the c172r and c172x models across different maneuvers and autopilot modes.
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `c1721.xml` | c172r | Sequential aileron, rudder, and elevator inputs over 10 seconds. A minimal example of timed control surface deflection. |
+    | `c1722.xml` | c172r | Extended control input sequence for aerodynamic response testing. |
+    | `c1723.xml` | c172x | Full takeoff run with autopilot: engine start, brake release, rotation at 51 KEAS, climb to 6,000 ft with altitude hold, then heading capture. The most complete beginner example. |
+    | `c1724.xml` | c172x | Further autopilot scenario building on c1723. |
+
+    Additional c172 scripts demonstrate specific edge cases:
+
+    | Script | What it demonstrates |
+    |--------|----------------------|
+    | `c172_cross_wind.xml` | Crosswind takeoff and landing technique. |
+    | `c172_head_wind.xml` | Headwind takeoff conditions. |
+    | `c172_cruise_8K.xml` | Steady cruise at 8,000 ft. |
+    | `c172_elevation_test.xml` | High-elevation density altitude performance. |
+    | `c172_elevator_doublet.xml` | Pitch doublet input for frequency response analysis. |
+    | `c172_runway_at_rest_cg_shift.xml` | CG shift effects while stationary on the runway. |
+
+  </Accordion>
+
+  <Accordion title="Cessna 310 scenarios">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `c3101.xml` | c310 | Basic twin-engine flight scenario. |
+    | `c3104.xml` | c310 | Asymmetric thrust scenario — engine-out handling. |
+    | `c3105.xml` | c310 | Extended twin-engine flight test. |
+
+  </Accordion>
+
+  <Accordion title="Boeing 737 scenarios">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `737_cruise.xml` | 737 | Jet cruise at altitude — steady-state trim point. |
+    | `737_test.xml` | 737 | General flight test maneuvers. |
+    | `737_cruise_steady_turn.xml` | 737 | Steady coordinated turn during cruise. |
+    | `737_cruise_steady_turn_linearize.xml` | 737 | Trim and linearization at the steady-turn operating point. |
+    | `737_cruise_steady_turn_simplex.xml` | 737 | Simplex optimizer trimming the steady turn. |
+    | `B737_Runway.xml` | 737 | Runway takeoff roll. |
+    | `b737_runway_new.xml` | 737 | Updated runway takeoff with revised initialization. |
+    | `B747_script1.xml` | B747 | Basic Boeing 747 flight scenario. |
+
+  </Accordion>
+
+  <Accordion title="X-15 hypersonic scripts">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `x151.xml` | X15 | X-15 powered ascent and high-Mach flight. |
+    | `x152.xml` | X15 | Continued X-15 flight envelope exploration. |
+    | `x153.xml` | X15 | X-15 re-entry and glide scenario. |
+
+  </Accordion>
+
+  <Accordion title="Orbital mechanics and ballistics">
+
+    These scripts use simple mass models to verify JSBSim's inertial navigation and gravitational modeling.
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `ball_orbit.xml` | ball | Circular orbit propagation. Verifies Keplerian dynamics. |
+    | `ball_orbit_g_torque.xml` | ball | Gravity gradient torque on an orbiting object. |
+    | `ball_orbit_phase.xml` | ball | Orbital phasing maneuver. |
+    | `ball_chute.xml` | ball | Parachute deceleration from altitude. |
+    | `ball.xml` | ball | Simple free-fall test. |
+    | `cannonball.xml` | ball | Classic ballistic trajectory — projectile launched at an angle. |
+    | `mk82_script.xml` | mk82 | Mk 82 bomb ballistic trajectory from release to impact. |
+
+  </Accordion>
+
+  <Accordion title="Stability and control tests">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `rudder_kick.xml` | c172r | Lateral-directional response to a rudder step input. Classic Dutch roll excitation. |
+    | `sim_primer.xml` | c172r | Introductory simulation — good first script to read and modify. |
+    | `f16_test.xml` | f16 | F-16 general flight test maneuvers. |
+    | `f16_runway_test.xml` | f16 | F-16 high-speed runway roll. |
+    | `F4N_runway_test.xml` | F4N | F-4N Phantom runway test. |
+    | `p51_start_test.xml` | p51d | P-51D engine start procedure. |
+    | `p51d_tail_wind.xml` | p51d | Tailwind takeoff performance. |
+    | `ov10_runway.xml` | OV10 | OV-10 Bronco short-field takeoff. |
+    | `ah1s_flight_test.xml` | ah1s | AH-1S helicopter flight envelope test. |
+    | `paraglider_rotate_test.xml` | paraglider | Paraglider pitch response to weight shift. |
+    | `Concorde_rotate_test.xml` | Concorde | Concorde rotation at Vr during takeoff. |
+    | `Concorde_runway_test.xml` | Concorde | Concorde full runway acceleration. |
+
+  </Accordion>
+
+  <Accordion title="Short S.23 and historical scenarios">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `Short_S23_1.xml` | Short_S23 | Short Empire water takeoff scenario 1. |
+    | `Short_S23_2.xml` | Short_S23 | Short Empire water takeoff scenario 2. |
+    | `Short_S23_3.xml` | Short_S23 | Short Empire cruise scenario. |
+    | `Short_S23_4.xml` | Short_S23 | Short Empire approach and alighting. |
+    | `Submarine_Scout_1.xml` | Submarine_Scout | WWI airship patrol scenario. |
+    | `b171.xml` | B17 | Boeing B-17 Flying Fortress flight test. |
+
+  </Accordion>
+
+  <Accordion title="Spacecraft and launcher scenarios">
+
+    | Script | Aircraft | What it demonstrates |
+    |--------|----------|----------------------|
+    | `J2460.xml` | J246 | Ares I-X first-stage powered ascent. |
+    | `J2461.xml` | J246 | Ares I-X second-stage and upper stack. |
+    | `T37.xml` | T37 | T-37 Tweet flight test. |
+    | `T38.xml` | T38 | T-38 Talon flight test. |
+    | `L410.xml` | L410 | L-410 Turbolet flight scenario. |
+    | `L4102.xml` | L410 | L-410 second scenario. |
+    | `Test_F450_Launch.xml` | F450 | F450 quadrotor vertical launch. |
+    | `weather-balloon.xml` | weather-balloon | High-altitude balloon ascent through ISA atmosphere layers. |
+    | `ZLT-NT-moored-1.xml` | ZLT-NT | Zeppelin NT airship moored at mast — ground handling loads. |
+
+  </Accordion>
+
+  <Accordion title="Output and utility scripts">
+
+    | Script | What it demonstrates |
+    |--------|----------------------|
+    | `kml_output.xml` | Writing flight track output in KML format for Google Earth. |
+    | `plotfile.xml` | Generating a CSV output file for post-processing. |
+    | `unitconversions.xml` | Exercises JSBSim's unit conversion system. |
+
+  </Accordion>
+
+</AccordionGroup>
+
+## A complete example: c1723.xml (takeoff and autopilot climb)
+
+`c1723.xml` is the most complete introductory script in the bundle. It loads the c172x, starts the engine, releases the brakes, rotates at 51 KEAS, and then hands control to the autopilot to climb and capture a heading. Key patterns it demonstrates:
+
+- Using XML entities (`<!ENTITY on "1">`) as named constants for readability
+- Initializing properties before events using bare `<property>` elements
+- Condition-triggered events (time-based and airspeed-based)
+- `<delay>` to add a pause between condition becoming true and the event firing
+- `persistent="true"` events that repeat on a timer
+- `<notify>` blocks that print structured telemetry to stdout
+
+<Tip>
+  Open `c1723.xml` alongside the [property system reference](/concepts/property-system) to understand how each `<set>` target maps to a simulation variable.
+</Tip>

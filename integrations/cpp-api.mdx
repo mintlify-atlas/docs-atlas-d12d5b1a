@@ -1,0 +1,225 @@
+---
+title: "C++ API"
+description: "Embed JSBSim directly in a C++ application using FGFDMExec, link against the library with CMake or pkg-config, and exchange state with an external integrator."
+---
+
+JSBSim is a C++ library. You can link against it from any C++ application and drive the simulation loop directly from your code. The primary entry point is `JSBSim::FGFDMExec`, defined in `FGFDMExec.h`.
+
+Full API documentation is available at [https://jsbsim-team.github.io/jsbsim/](https://jsbsim-team.github.io/jsbsim/).
+
+## Minimal integration example
+
+The smallest complete program that loads and runs a JSBSim script:
+
+```cpp
+#include <FGFDMExec.h>
+
+int main(int argc, char **argv) {
+    JSBSim::FGFDMExec FDMExec;
+    FDMExec.LoadScript(SGPath(argv[1]));
+    FDMExec.RunIC();
+    bool result = true;
+    while (result) result = FDMExec.Run();
+}
+```
+
+Compile with the JSBSim include and library paths on your system, then run with a script path as the first argument:
+
+```bash
+./my_sim scripts/c1721.xml
+```
+
+## Loading a model manually
+
+Use `LoadModel()` to load an aircraft definition without a script. This lets you set initial conditions programmatically and drive the loop yourself.
+
+### With explicit paths
+
+```cpp
+#include <FGFDMExec.h>
+
+int main() {
+    JSBSim::FGFDMExec FDMExec;
+
+    FDMExec.LoadModel(
+        SGPath("aircraft"),  // AircraftPath
+        SGPath("engine"),    // EnginePath
+        SGPath("systems"),   // SystemsPath
+        "c172p"              // model name
+    );
+
+    // Set initial conditions via the property manager
+    FDMExec.SetPropertyValue("ic/h-sl-ft", 3000.0);
+    FDMExec.SetPropertyValue("ic/vt-kts", 100.0);
+
+    FDMExec.RunIC();
+
+    while (FDMExec.Run()) {
+        double alt = FDMExec.GetPropertyValue("position/h-sl-ft");
+    }
+}
+```
+
+### With pre-configured paths
+
+If you set the aircraft, engine, and systems paths beforehand using `SetAircraftPath()`, `SetEnginePath()`, and `SetSystemsPath()`, the shorter `LoadModel(model)` overload resolves the paths automatically:
+
+```cpp
+FDMExec.SetRootDir(SGPath("/path/to/jsbsim"));
+FDMExec.SetAircraftPath(SGPath("aircraft"));
+FDMExec.SetEnginePath(SGPath("engine"));
+FDMExec.SetSystemsPath(SGPath("systems"));
+FDMExec.LoadModel("c172p");
+```
+
+## Reading and writing properties
+
+The property system is the primary interface for exchanging data with a running simulation:
+
+```cpp
+// Read a value
+double altitude = FDMExec.GetPropertyValue("position/h-sl-ft");
+double airspeed = FDMExec.GetPropertyValue("velocities/vt-fps");
+
+// Write a value (e.g. control surface command)
+FDMExec.SetPropertyValue("fcs/aileron-cmd-norm", 0.5);
+FDMExec.SetPropertyValue("fcs/throttle-cmd-norm[0]", 0.8);
+```
+
+Both methods are declared in `FGFDMExec.h`:
+
+```cpp
+double GetPropertyValue(const std::string& property);
+void   SetPropertyValue(const std::string& property, double value);
+```
+
+## Integrating with an external flight model
+
+When embedding JSBSim inside a larger simulation framework, you typically exchange state at each time step using three phases:
+
+<Steps>
+  <Step title="copy_to_JSBSim">
+    Write external state (pilot inputs, sensor data) into JSBSim properties before calling `Run()`:
+
+    ```cpp
+    FDMExec.SetPropertyValue("fcs/aileron-cmd-norm",  aileron_cmd);
+    FDMExec.SetPropertyValue("fcs/elevator-cmd-norm", elevator_cmd);
+    FDMExec.SetPropertyValue("fcs/rudder-cmd-norm",   rudder_cmd);
+    FDMExec.SetPropertyValue("fcs/throttle-cmd-norm[0]", throttle);
+    ```
+  </Step>
+  <Step title="Run()">
+    Advance the simulation by one time step:
+
+    ```cpp
+    bool ok = FDMExec.Run();
+    ```
+  </Step>
+  <Step title="copy_from_JSBSim">
+    Read updated state out of JSBSim after `Run()` returns:
+
+    ```cpp
+    double phi   = FDMExec.GetPropertyValue("attitude/phi-rad");
+    double theta = FDMExec.GetPropertyValue("attitude/theta-rad");
+    double psi   = FDMExec.GetPropertyValue("attitude/psi-rad");
+    double lat   = FDMExec.GetPropertyValue("position/lat-geod-deg");
+    double lon   = FDMExec.GetPropertyValue("position/long-gc-deg");
+    double alt   = FDMExec.GetPropertyValue("position/h-sl-ft");
+    ```
+  </Step>
+</Steps>
+
+## Accessing subsystem objects
+
+`FGFDMExec` exposes typed pointers to each subsystem model. Use these when you need more than raw property access:
+
+```cpp
+// Access the propagation model (position, velocity, orientation)
+auto propagate = FDMExec.GetPropagate();
+
+// Access the atmosphere model
+auto atmosphere = FDMExec.GetAtmosphere();
+
+// Access the aerodynamics model
+auto aero = FDMExec.GetAerodynamics();
+
+// Access propulsion
+auto propulsion = FDMExec.GetPropulsion();
+propulsion->InitRunning(-1);  // start all engines
+```
+
+## CMake integration
+
+JSBSim installs a CMake package configuration file. Use `find_package` to locate it:
+
+```cmake
+cmake_minimum_required(VERSION 3.15)
+project(MyFlightSim)
+
+find_package(JSBSim REQUIRED)
+
+add_executable(my_sim main.cpp)
+target_link_libraries(my_sim PRIVATE JSBSim::JSBSim)
+```
+
+Set `JSBSim_DIR` if JSBSim is installed in a non-standard location:
+
+```bash
+cmake -DJSBSim_DIR=/path/to/jsbsim/lib/cmake/JSBSim ..
+```
+
+## pkg-config integration
+
+JSBSim also installs a `JSBSim.pc` pkg-config file. Use it to retrieve compiler and linker flags without CMake:
+
+```bash
+pkg-config --cflags --libs JSBSim
+```
+
+In a Makefile:
+
+```makefile
+CXX      = g++
+CXXFLAGS = $(shell pkg-config --cflags JSBSim)
+LDFLAGS  = $(shell pkg-config --libs JSBSim)
+
+my_sim: main.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
+```
+
+## Simulation time control
+
+```cpp
+// Query current time and step size
+double t  = FDMExec.GetSimTime();
+double dt = FDMExec.GetDeltaT();
+
+// Override the integration step size
+FDMExec.Setdt(1.0 / 120.0);  // 120 Hz
+
+// Suspend and resume integration (hold state, still process models)
+FDMExec.SuspendIntegration();
+FDMExec.ResumeIntegration();
+
+// Reset to initial conditions (0 = keep IC, 1 = reload IC file)
+FDMExec.ResetToInitialConditions(0);
+```
+
+## API reference
+
+The full Doxygen API reference for every class and method is hosted at:
+
+**[https://jsbsim-team.github.io/jsbsim/](https://jsbsim-team.github.io/jsbsim/)**
+
+Key classes to explore:
+
+| Class | Description |
+|-------|-------------|
+| `FGFDMExec` | Top-level executive — owns all subsystem models |
+| `FGPropagate` | Equations of motion: position, velocity, orientation |
+| `FGAtmosphere` | Atmospheric model (temperature, pressure, density) |
+| `FGAerodynamics` | Aerodynamic forces and moments |
+| `FGPropulsion` | Engine and propeller models |
+| `FGGroundReactions` | Landing gear and ground contact |
+| `FGInitialCondition` | Initial condition management |
+| `FGPropertyManager` | Property tree access |

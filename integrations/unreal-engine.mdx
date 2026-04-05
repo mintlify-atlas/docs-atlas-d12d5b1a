@@ -1,0 +1,183 @@
+---
+title: "Unreal Engine"
+description: "Run JSBSim flight dynamics inside Unreal Engine 5 using the JSBSimFlightDynamicsModel plugin and the UEReferenceApp sample project."
+---
+
+The JSBSim Unreal Engine integration wraps the JSBSim library in a UE5 plugin named `JSBSimFlightDynamicsModel`. A sample application, `UEReferenceApp`, demonstrates a complete aircraft simulation driven by JSBSim physics inside Unreal Engine.
+
+This integration was created by the Simulation Team at Epic Games as part of the **Antoinette Project** — an initiative to demonstrate that Unreal Engine 5, with its double-precision coordinate system and rendering capabilities, can support serious flight simulation workloads.
+
+<Note>
+The Unreal Engine plugin and reference application are licensed under the [MIT license](https://opensource.org/licenses/MIT). See `UnrealEngine/LICENSE.txt` in the repository.
+</Note>
+
+## Requirements
+
+| Component | Requirement |
+|-----------|-------------|
+| Unreal Engine | UE 5.0 – UE 5.6 |
+| Windows compiler | Visual Studio 2022 (UE 5.3+), Visual Studio 2019 or 2022 (UE 5.0–5.2) |
+| Windows toolchain | MSVC v14.38 for UE 5.4–5.5 (`MSVC v143 x64/x86 build tools (v14.38-17.X)`) |
+| Linux/macOS compiler | Clang with `libc++` |
+
+## Plugin architecture
+
+The plugin lives in `UnrealEngine/Plugins/JSBSimFlightDynamicsModel/` and has this layout:
+
+```
+JSBSimFlightDynamicsModel/
+├── Source/
+│   ├── JSBSimFlightDynamicsModel/   # UE plugin C++ module
+│   ├── JSBSimFlightDynamicsModelEditor/
+│   └── ThirdParty/
+│       └── JSBSim/
+│           ├── Include/             # JSBSim C++ headers
+│           └── Lib/                 # Compiled dynamic library
+│               ├── Linux/
+│               ├── Mac/
+│               └── Win64/
+└── Resources/
+    └── JSBSim/
+        ├── aircraft/
+        ├── engine/
+        └── systems/
+```
+
+The plugin module wraps `JSBSim::FGFDMExec` and steps it at a fixed rate of **120 Hz**, independent of the game frame rate. On each game frame, the plugin advances the simulation as many steps as needed to stay synchronised.
+
+## How JSBSim physics drive the UE vehicle
+
+Each frame, the UE plugin:
+
+1. Reads pilot input (keyboard, gamepad, or Blueprint) and converts it to JSBSim property values (`fcs/aileron-cmd-norm`, `fcs/elevator-cmd-norm`, `fcs/throttle-cmd-norm`, etc.).
+2. Calls `FGFDMExec::Run()` one or more times to advance the physics to the current wall-clock time.
+3. Reads the resulting position (`position/lat-geod-deg`, `position/long-gc-deg`, `position/h-sl-ft`) and attitude (`attitude/phi-rad`, `attitude/theta-rad`, `attitude/psi-rad`) from JSBSim.
+4. Applies those values to the Unreal `Actor` transform, driving the visual aircraft mesh.
+
+The extended command console exposes the full JSBSim property manager to Blueprint nodes, so you can get or set any property at runtime without modifying the plugin's C++ code.
+
+## UEReferenceApp sample project
+
+`UnrealEngine/UEReferenceApp.uproject` is the sample Unreal project. It is intentionally simple — a single flyable aircraft on a flat terrain — to make it easy to understand and fork.
+
+Key controls in the reference app:
+
+| Action | Keyboard | Gamepad |
+|--------|----------|---------|
+| Toggle engines on/off | Ctrl-E | — |
+| Throttle increase | 3 | B |
+| Throttle decrease | 2 | A |
+| Aileron left/right | Num 4 / Num 6 | L-Stick X |
+| Elevator up/down | Num 2 / Num 8 | L-Stick Y |
+| Rudder left/right | Num 0 / Num Enter | ZL / ZR |
+| Gear toggle | G | L3 |
+| Toggle pilot/orbit camera | Tab | — |
+| Toggle FDM debug overlay | D | — |
+
+## Build instructions
+
+<Tabs>
+  <Tab title="Linux">
+    The `JSBSimForUnrealLinux.sh` script in the repository root handles building JSBSim and staging all files into the plugin folder:
+
+    <Steps>
+      <Step title="Install dependencies">
+        Install Clang and the libc++ runtime. On Ubuntu:
+
+        ```bash
+        sudo apt-get install clang libc++-dev libc++1-15 libc++abi1-15 libc++abi-15-dev
+        ```
+      </Step>
+      <Step title="Run the build script">
+        From the root of the JSBSim repository:
+
+        ```bash
+        bash JSBSimForUnrealLinux.sh
+        ```
+
+        The script:
+        - Builds JSBSim as a shared library with CMake and Clang
+        - Copies headers to `UnrealEngine/Plugins/JSBSimFlightDynamicsModel/Source/ThirdParty/JSBSim/Include/`
+        - Copies `libJSBSim.so` to `…/Lib/Linux/`
+        - Copies `aircraft/`, `engine/`, and `systems/` to `…/Resources/JSBSim/`
+      </Step>
+      <Step title="Open the Unreal project">
+        Launch the UE Editor pointing at the project file:
+
+        ```bash
+        $PATH_TO_UNREAL/Engine/Binaries/Linux/UnrealEditor \
+          $PATH_TO_JSBSIM/UnrealEngine/UEReferenceApp.uproject
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="macOS">
+    The `JSBSimForUnrealMac.sh` script in the repository root handles the full build and staging process:
+
+    <Steps>
+      <Step title="Run the build script">
+        From the root of the JSBSim repository:
+
+        ```bash
+        bash JSBSimForUnrealMac.sh
+        ```
+
+        The script builds a universal binary (`arm64;x86_64`) and copies it to `…/Lib/Mac/libJSBSim.dylib`.
+      </Step>
+      <Step title="Generate project files">
+        ```bash
+        $PATH_TO_UNREAL/Engine/Build/BatchFiles/Mac/GenerateProjectFiles.sh \
+          $PATH_TO_JSBSIM/UnrealEngine/UEReferenceApp.uproject -game
+        ```
+      </Step>
+      <Step title="Open the Unreal project">
+        Double-click `UnrealEngine/UEReferenceApp.uproject` to open it in the UE Editor, or open the generated Xcode workspace.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Install Unreal Engine 5">
+        Download and install UE 5.x from [unrealengine.com](https://www.unrealengine.com/en-US/download). The standard license is free for hobbyists.
+      </Step>
+      <Step title="Install Visual Studio">
+        Install Visual Studio 2022 with the C++ game development workload. For UE 5.4–5.5, manually select `MSVC v143 x64/x86 build tools (v14.38-17.X)` during installation.
+      </Step>
+      <Step title="Build JSBSim for Unreal">
+        Open `JSBSimForUnreal.sln` at the root of the repository in Visual Studio 2022, select the **Release** configuration, and build. This compiles JSBSim as a DLL and copies all files — headers, libraries, and resources — into the plugin folder automatically.
+      </Step>
+      <Step title="Open the Unreal project">
+        **Option 1:** Double-click `UnrealEngine/UEReferenceApp.uproject`. When prompted about missing modules, click **Yes** to trigger a background build.
+
+        **Option 2 (recommended for plugin development):** Right-click `UEReferenceApp.uproject`, select **Generate Visual Studio project files**, open `UEReferenceApp.sln`, and build from Visual Studio. This lets you edit, run, and debug the plugin code directly.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Optional HD content pack
+
+The repository ships low-resolution aircraft models and a flat terrain to keep the download size small. Epic Games provides a high-definition content pack (330 MB) with a detailed aircraft model, HD textures, and non-flat terrain:
+
+```
+https://epicgames.box.com/s/93mupzix8qieu51v209ockq68heuxgwj
+```
+
+Extract the archive and copy its `Content/` folder into `UnrealEngine/UEReferenceApp/Content/`, overwriting the existing files.
+
+## Extended commands and Blueprint access
+
+The plugin exposes the full JSBSim property manager through Blueprint nodes, giving you get/set access to every JSBSim property from Blueprint graphs without writing C++.
+
+This is particularly useful for aircraft models that introduce controls not hardcoded in the plugin. For example, the `ah1s` helicopter model loads custom controls at runtime; you can read and write those controls through the Command Console Blueprint node rather than modifying the plugin.
+
+<Tip>
+Start with the default hardcoded controls already wired in the reference project. Use the Command Console Blueprint node only for additional properties that are not covered by the standard controls.
+</Tip>
+
+## Further resources
+
+- [UEReferenceApp README](https://github.com/JSBSim-Team/jsbsim/blob/master/UnrealEngine/README.md) — Windows build instructions and key mappings
+- [Unix build instructions](https://github.com/JSBSim-Team/jsbsim/blob/master/UnrealEngine/README-Unix.md) — Linux and macOS manual build steps
+- [Antoinette Project tutorial](https://dev.epicgames.com/community/learning/tutorials/mmL/a-diy-flight-simulator-tutorial) — Epic Games deep-dive on building a complete flight simulator with JSBSim and UE5
+- [Unreal Engine developer community](https://dev.epicgames.com/community/getting-started) — Getting started guides and learning courses

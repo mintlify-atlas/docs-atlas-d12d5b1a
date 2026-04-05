@@ -1,0 +1,530 @@
+---
+title: "Python module reference"
+description: "Complete reference for the jsbsim Python package — classes, methods, enumerations, exceptions, and utilities."
+---
+
+The `jsbsim` package exposes a Cython-generated extension module (`_jsbsim`) plus a thin `__init__.py` re-export layer. All names below are importable directly from the top-level `jsbsim` namespace.
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(root_dir=jsbsim.get_default_root_dir())
+```
+
+## Module-level utilities
+
+### get_default_root_dir
+
+```python
+def get_default_root_dir() -> str
+```
+
+Searches the Python site-packages directories for the bundled `jsbsim/aircraft/` data tree and returns the root path. Raises `IOError` if not found.
+
+```python
+root = jsbsim.get_default_root_dir()
+# e.g. '/usr/local/lib/python3.11/site-packages/jsbsim'
+```
+
+### set_logger
+
+```python
+def set_logger(logger: FGLogger) -> None
+```
+
+Replaces the active logging backend. `logger` must be an instance of `FGLogger` or a subclass. The default at import time is `DefaultLogger`, which writes to `stdout`.
+
+---
+
+## FGFDMExec
+
+The main simulation executive. Inherits from `FGJSBBase`.
+
+```python
+class FGFDMExec(root_dir: str, pm_root: FGPropertyManager = None)
+```
+
+<ParamField path="root_dir" type="str" required>
+  Path to the JSBSim root directory (the one containing `aircraft/`, `engine/`, and `systems/` subdirectories). Pass `None` to use `get_default_root_dir()` automatically.
+</ParamField>
+
+<ParamField path="pm_root" type="FGPropertyManager">
+  Optional existing property manager to attach to. Leave `None` in normal use.
+</ParamField>
+
+`FGFDMExec` supports property access via the subscript operator:
+
+```python
+vt = fdm["velocities/vt-fps"]          # read
+fdm["fcs/elevator-cmd-norm"] = 0.05    # write
+```
+
+### Simulation loop
+
+<AccordionGroup>
+  <Accordion title="run() / run_ic()">
+
+```python
+def run(self) -> bool
+```
+
+Advances simulation by one `dT`. Returns `True` while the simulation should continue.
+
+```python
+def run_ic(self) -> bool
+```
+
+Applies initial conditions with `dt = 0`. Call once after loading a model and after every `reset_to_initial_conditions()`.
+
+```python
+fdm.load_model("c172r")
+fdm.run_ic()
+while fdm.run():
+    print(fdm.get_sim_time())
+```
+
+  </Accordion>
+  <Accordion title="reset_to_initial_conditions(mode)">
+
+```python
+def reset_to_initial_conditions(self, mode: int) -> None
+```
+
+Resets all models. `mode=0` is a plain reset; `mode=1` opens a new output file; `mode=2` skips the internal `run_ic()` call.
+
+  </Accordion>
+</AccordionGroup>
+
+### Loading
+
+```python
+def load_model(self, model: str, add_model_to_path: bool = True) -> bool
+```
+
+Loads an aircraft from the current aircraft path. `.xml` is appended automatically if absent.
+
+```python
+def load_model_with_paths(self, model: str, aircraft_path: str,
+                          engine_path: str, systems_path: str,
+                          add_model_to_path: bool = True) -> bool
+```
+
+Loads an aircraft while specifying all three resource paths explicitly.
+
+```python
+def load_script(self, script: str, delta_t: float = 0.0,
+                initfile: str = "") -> bool
+```
+
+Loads a JSBSim script. `script` is resolved relative to the root directory.
+
+```python
+def load_planet(self, planet_path: str, useAircraftPath: bool) -> bool
+```
+
+Loads a planet definition XML file.
+
+```python
+def load_ic(self, rstfile: str, useAircraftPath: bool) -> bool
+```
+
+Loads an initial-conditions XML file into the current `FGInitialCondition` object.
+
+### Path accessors
+
+```python
+def set_root_dir(self, path: str) -> None
+def get_root_dir(self) -> str
+
+def set_aircraft_path(self, path: str) -> bool
+def get_aircraft_path(self) -> str
+def get_full_aircraft_path(self) -> str
+
+def set_engine_path(self, path: str) -> bool
+def get_engine_path(self) -> str
+
+def set_systems_path(self, path: str) -> bool
+def get_systems_path(self) -> str
+
+def set_output_path(self, path: str) -> bool
+def get_output_path(self) -> str
+```
+
+### Time
+
+```python
+def get_sim_time(self) -> float       # cumulative simulation time (s)
+def get_delta_t(self) -> float        # integration step size (s)
+def set_dt(self, dt: float) -> None   # set integration step size
+def set_sim_time(self, time: float) -> bool  # override sim time
+def incr_time(self) -> float          # advance time by dT (returns new time)
+
+def suspend_integration(self) -> None
+def resume_integration(self) -> None
+def integration_suspended(self) -> bool
+
+def hold(self) -> None
+def resume(self) -> None
+def holding(self) -> bool
+def enable_increment_then_hold(self, time_steps: int) -> None
+def check_incremental_hold(self) -> None
+```
+
+### Property system
+
+```python
+def get_property_value(self, name: str) -> float
+def set_property_value(self, name: str, value: float) -> None
+def get_property_manager(self) -> FGPropertyManager
+
+def query_property_catalog(self, check: str) -> str
+def get_property_catalog(self) -> list[str]
+def print_property_catalog(self) -> None
+```
+
+`get_property_catalog()` returns a list of all property path strings for the loaded aircraft.
+
+```python
+# Find all velocity properties
+catalog = fdm.get_property_catalog()
+vel_props = [p for p in catalog if "velocities" in p]
+```
+
+### Subsystem accessors
+
+```python
+def get_propagate(self) -> FGPropagate
+def get_aerodynamics(self) -> FGAerodynamics
+def get_atmosphere(self) -> FGAtmosphere
+def get_auxiliary(self) -> FGAuxiliary
+def get_ground_reactions(self) -> FGGroundReactions
+def get_mass_balance(self) -> FGMassBalance
+def get_propulsion(self) -> FGPropulsion
+def get_aircraft(self) -> FGAircraft
+```
+
+### Trimming
+
+```python
+def do_trim(self, mode: int) -> None
+def set_trim_status(self, status: bool) -> None
+def get_trim_status(self) -> bool
+```
+
+### Output and logging
+
+```python
+def set_output_directive(self, fname: str) -> bool
+def set_logging_rate(self, rate: float) -> None
+def set_output_filename(self, n: int, fname: str) -> bool
+def get_output_filename(self, n: int) -> str
+def disable_output(self) -> None
+def enable_output(self) -> None
+```
+
+### Diagnostics
+
+```python
+def set_debug_level(self, level: int) -> None
+def get_debug_level(self) -> int
+def get_model_name(self) -> str
+def print_simulation_configuration(self) -> None
+def get_propulsion_tank_report(self) -> str
+```
+
+---
+
+## FGPropertyManager
+
+```python
+class FGPropertyManager(node: FGPropertyNode = None)
+```
+
+Wraps the SimGear property tree manager. Pass an existing `FGPropertyNode` to root the manager at that node, or no argument to create a fresh tree.
+
+```python
+def get_node(self, path: Optional[str] = None,
+             create: bool = False) -> Optional[FGPropertyNode]
+def hasNode(self, path: str) -> bool
+```
+
+---
+
+## FGPropertyNode
+
+Represents a single node in the property tree.
+
+```python
+def get_name(self) -> str
+```
+Returns the node's simple (unqualified) name.
+
+```python
+def get_fully_qualified_name(self) -> str
+```
+Returns the full path from root, e.g. `"/velocities/vt-fps"`. This call traverses the tree and is slow; use it for debugging only.
+
+```python
+def get_node(self, path: str, create: bool = False) -> Optional[FGPropertyNode]
+```
+Navigates to a child node by relative path. Returns `None` if the node does not exist and `create` is `False`.
+
+```python
+def get_double_value(self) -> float
+def set_double_value(self, value: float) -> bool
+```
+Read or write the node's numeric value.
+
+```python
+def get_attribute(self, attr: Attribute) -> bool
+def set_attribute(self, attr: Attribute, state: bool) -> None
+```
+Check or set read/write attributes on the node using the `Attribute` enum.
+
+---
+
+## FGPropagate
+
+Provides body-axis state: position, velocity, and attitude.
+
+```python
+def get_Tl2b(self) -> numpy.ndarray   # local-to-body rotation matrix (3x3)
+def get_Tec2b(self) -> numpy.ndarray  # ECEF-to-body rotation matrix (3x3)
+def get_uvw(self) -> numpy.ndarray    # body-frame velocity vector (3x1, ft/s)
+```
+
+---
+
+## FGAerodynamics
+
+```python
+def get_moments_MRC(self) -> numpy.ndarray  # aero moments at MRC (3x1, lb·ft)
+def get_forces(self) -> numpy.ndarray       # aero forces in body frame (3x1, lbf)
+```
+
+---
+
+## FGAtmosphere
+
+```python
+def set_temperature(self, t: float, h: float, unit: eTemperature) -> None
+def get_temperature(self, h: float) -> float      # temperature at altitude h (ft), °R
+def set_pressure_SL(self, unit: ePressure, p: float) -> None
+```
+
+---
+
+## FGAuxiliary
+
+```python
+def get_Tw2b(self) -> numpy.ndarray   # wind-to-body rotation matrix (3x3)
+def get_Tb2w(self) -> numpy.ndarray   # body-to-wind rotation matrix (3x3)
+```
+
+---
+
+## FGMassBalance
+
+```python
+def get_xyz_cg(self) -> numpy.ndarray   # CG position in structural frame (3x1, in)
+def get_J(self) -> numpy.ndarray        # inertia tensor (3x3, slug·ft²)
+def get_Jinv(self) -> numpy.ndarray     # inverse inertia tensor (3x3)
+```
+
+---
+
+## FGGroundReactions
+
+```python
+def get_gear_unit(self, gear: int) -> FGLGear
+def get_num_gear_units(self) -> int
+```
+
+---
+
+## FGLGear
+
+Represents a single landing gear strut.
+
+```python
+def get_steer_norm(self) -> float          # normalized steering deflection
+def get_body_x_force(self) -> float        # drag force on body X axis (lbf)
+def get_body_y_force(self) -> float        # side force on body Y axis (lbf)
+def get_body_z_force(self) -> float        # normal force on body Z axis (lbf)
+def get_location(self) -> numpy.ndarray    # gear attachment point (3x1, in)
+def get_acting_location(self) -> numpy.ndarray  # ground contact point (3x1, in)
+```
+
+---
+
+## FGPropulsion
+
+```python
+def init_running(self, n: int) -> None     # initialize engine n to running state
+def get_num_engines(self) -> int
+def get_engine(self, idx: int) -> FGEngine
+def get_steady_state(self) -> bool         # true when all engines are at steady state
+```
+
+---
+
+## FGEngine
+
+```python
+def init_running(self) -> int    # initialize to running state, returns success
+```
+
+---
+
+## FGLinearization
+
+Computes a linear state-space model after a trim.
+
+```python
+class FGLinearization(fdmex: FGFDMExec)
+```
+
+**Properties:**
+
+```python
+x0: numpy.ndarray          # initial state vector
+u0: numpy.ndarray          # initial input vector
+y0: numpy.ndarray          # initial output vector
+
+system_matrix: numpy.ndarray      # A matrix
+input_matrix: numpy.ndarray       # B matrix
+output_matrix: numpy.ndarray      # C matrix
+feedforward_matrix: numpy.ndarray # D matrix
+
+state_space: tuple[numpy.ndarray] # (A, B, C, D)
+
+x_names: tuple[str]   # state variable names
+u_names: tuple[str]   # input variable names
+y_names: tuple[str]   # output variable names
+x_units: tuple[str]   # state variable units
+u_units: tuple[str]   # input variable units
+y_units: tuple[str]   # output variable units
+```
+
+**Method:**
+
+```python
+def write_scicoslab(self, path: str) -> None
+```
+
+Writes the state-space matrices to a Scicoslab-compatible text file.
+
+---
+
+## FGJSBBase
+
+Base class for all JSBSim objects.
+
+```python
+debug_lvl: int   # property (readable and writable)
+
+def get_version(self) -> str
+def disable_highlighting(self) -> None
+```
+
+---
+
+## FGLogger
+
+Abstract base class for custom log sinks. Subclass this to redirect JSBSim output.
+
+```python
+class FGLogger:
+    log_level: LogLevel = LogLevel.BULK
+
+    def set_level(self, level: LogLevel) -> None
+    def file_location(self, filename: str, line: int) -> None
+    def message(self, message: str) -> None
+    def format(self, format: LogFormat) -> None
+    def flush(self) -> None
+```
+
+Register with `jsbsim.set_logger(my_logger)`.
+
+---
+
+## Enumerations
+
+### LogLevel
+
+```python
+class LogLevel(enum.Enum):
+    BULK   = 0   # frequent per-frame messages
+    DEBUG  = 1   # debug messages
+    INFO   = 2   # informational messages
+    WARN   = 3   # possible impending problem
+    ERROR  = 4   # recoverable error
+    FATAL  = 5   # fatal error, raises exception
+    STDOUT = 6   # unconditionally displayed
+```
+
+### LogFormat
+
+```python
+class LogFormat(enum.Enum):
+    RESET        = 0
+    RED          = 1
+    BLUE         = 2
+    CYAN         = 3
+    GREEN        = 4
+    DEFAULT      = 5
+    BOLD         = 6
+    NORMAL       = 7
+    UNDERLINE_ON = 8
+    UNDERLINE_OFF = 9
+```
+
+### Attribute
+
+```python
+class Attribute(enum.Enum):
+    NO_ATTR = 0
+    READ    = 1
+    WRITE   = 2
+```
+
+Used with `FGPropertyNode.get_attribute()` and `set_attribute()`.
+
+### eTemperature
+
+```python
+class eTemperature(enum.Enum):
+    eNoTempUnit = 0
+    eFahrenheit = 1
+    eCelsius    = 2
+    eRankine    = 3
+    eKelvin     = 4
+```
+
+### ePressure
+
+```python
+class ePressure(enum.Enum):
+    eNoPressUnit = 0
+    ePSF         = 1   # pounds per square foot
+    eMillibars   = 2
+    ePascals     = 3
+    eInchesHg    = 4
+```
+
+---
+
+## Exceptions
+
+| Exception | Inherits from | Raised when |
+|---|---|---|
+| `BaseError` | `RuntimeError` | General JSBSim errors |
+| `TrimFailureError` | `BaseError` | Trim algorithm fails to converge |
+| `GeographicError` | `BaseError` | Geographic computation error (e.g. invalid coordinates) |
+
+```python
+try:
+    fdm.do_trim(1)
+except jsbsim.TrimFailureError as e:
+    print(f"Trim failed: {e}")
+```

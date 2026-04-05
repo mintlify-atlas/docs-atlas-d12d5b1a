@@ -1,0 +1,168 @@
+---
+title: "Aircraft models"
+description: "All 61 aircraft bundled with JSBSim, organized by category, with notes on what each model demonstrates."
+---
+
+JSBSim ships with 61 aircraft models in the `aircraft/` directory. Each model is a self-contained folder of XML files describing the airframe, aerodynamics, propulsion, and flight control system. You can use these models as-is for simulation and testing, or as a starting point for your own aircraft.
+
+## Loading an aircraft
+
+Load any bundled aircraft by name using `load_model`:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_model('c172p')
+fdm.run_ic()
+```
+
+You can also load an aircraft from the command-line executable:
+
+```bash
+JSBSim --aircraft=c172p --initfile=reset00
+```
+
+<Note>
+  Pass the root path to `FGFDMExec` if you are working outside the installed package directory, e.g. `jsbsim.FGFDMExec('/path/to/jsbsim-root')`.
+</Note>
+
+## Aircraft by category
+
+<AccordionGroup>
+
+  <Accordion title="General aviation">
+
+    These single- and twin-engine piston aircraft cover a broad range of general aviation simulation scenarios, from student pilot training to light IFR cross-country flights.
+
+    | Model | Description |
+    |-------|-------------|
+    | `c172p` | Cessna 172P with fixed-pitch propeller. The most widely used general-aviation trainer in JSBSim. |
+    | `c172r` | Cessna 172R with constant-speed propeller and updated aerodynamics. Used in many bundled scripts. |
+    | `c172x` | Cessna 172 variant with autopilot support. Used in `c1723.xml` to demonstrate heading and altitude hold. |
+    | `c182` | Cessna 182 Skylane — higher-performance single compared to the 172 family. |
+    | `c310` | Cessna 310 twin-engine piston. Demonstrates multi-engine propulsion and asymmetric thrust. |
+    | `J3Cub` | Piper J-3 Cub — light, low-speed aircraft useful for testing low-Reynolds aerodynamics. |
+    | `pa28` | Piper PA-28 Cherokee — another common trainer, demonstrating a different aerodynamic dataset. |
+    | `pc7` | Pilatus PC-7 turboprop trainer. |
+    | `t6texan2` | Beechcraft T-6 Texan II — modern turboprop military trainer. |
+    | `L17` | Stinson L-17 Navion — light liaison aircraft. |
+    | `SGS` | Schweizer SGS 2-33 glider — demonstrates zero-thrust soaring flight. |
+    | `sgs126` | Schweizer SGS 1-26 competition sailplane. |
+    | `sgs233` | Schweizer SGS 2-33A glider variant. |
+    | `pogo-jsbsim` | Convair XFY Pogo tail-sitter proof-of-concept model. |
+
+  </Accordion>
+
+  <Accordion title="Commercial and transport">
+
+    These models cover regional turboprops through wide-body jets and demonstrate high-fidelity turbine propulsion, autopilot systems, and complex aerodynamic envelopes.
+
+    | Model | Description |
+    |-------|-------------|
+    | `737` | Boeing 737 narrow-body jet. Used in cruise, runway, and linearization scripts. |
+    | `787-8` | Boeing 787-8 Dreamliner wide-body. Demonstrates large transport aerodynamics. |
+    | `A320` | Airbus A320 narrow-body jet. |
+    | `B747` | Boeing 747 wide-body. Demonstrates four-engine turbofan propulsion. |
+    | `B17` | Boeing B-17 Flying Fortress — WWII heavy bomber, piston four-engine. |
+    | `C130` | Lockheed C-130 Hercules — turboprop military transport. |
+    | `fokker100` | Fokker 100 regional jet. |
+    | `fokker50` | Fokker 50 regional turboprop. |
+    | `global5000` | Bombardier Global 5000 business jet. |
+    | `MD11` | McDonnell Douglas MD-11 tri-jet wide-body. Demonstrates three-engine layout. |
+    | `Concorde` | Aerospatiale/BAC Concorde — demonstrates supersonic cruise and delta-wing aerodynamics. Used in rotate and runway test scripts. |
+    | `DHC6` | De Havilland Canada DHC-6 Twin Otter STOL transport. |
+    | `L410` | Let L-410 Turbolet regional turboprop. Used in `L410.xml` and `L4102.xml` scripts. |
+    | `minisgs` | Mini SGS — small training glider variant. |
+
+  </Accordion>
+
+  <Accordion title="Military and high-performance">
+
+    High-performance jet aircraft for testing supersonic aerodynamics, advanced FCS, and flight envelope edge cases.
+
+    | Model | Description |
+    |-------|-------------|
+    | `A4` | Douglas A-4 Skyhawk attack jet. |
+    | `f15` | McDonnell Douglas F-15 Eagle — high-performance air superiority fighter. |
+    | `f16` | General Dynamics F-16 Fighting Falcon — relaxed static stability, demonstrates fly-by-wire FCS. Used in runway and general test scripts. |
+    | `f22` | Lockheed Martin F-22 Raptor — fifth-generation supercruise fighter. |
+    | `f104` | Lockheed F-104 Starfighter — early supersonic interceptor. |
+    | `F4N` | McDonnell Douglas F-4N Phantom II — demonstrates variable-geometry intake modeling. Used in runway test script. |
+    | `F80C` | Lockheed F-80 Shooting Star — early jet fighter. |
+    | `OV10` | North American OV-10 Bronco — twin-turboprop COIN aircraft. Used in runway test script. |
+    | `p51d` | North American P-51D Mustang — WWII long-range escort fighter. Used in engine start and tail-wind test scripts. |
+    | `T37` | Cessna T-37 Tweet — subsonic jet trainer. Used in `T37.xml` script. |
+    | `T38` | Northrop T-38 Talon — supersonic jet trainer. Used in `T38.xml` script. |
+    | `X15` | North American X-15 — hypersonic rocket-powered research aircraft. Used in `x151.xml`, `x152.xml`, `x153.xml`. |
+    | `x24b` | Martin Marietta X-24B — lifting body research vehicle. |
+    | `XB-70` | North American XB-70 Valkyrie — Mach 3 strategic bomber demonstrator. |
+
+  </Accordion>
+
+  <Accordion title="Historical">
+
+    Early aircraft models useful for studying low-speed, pre-WWII, and experimental aerodynamics.
+
+    | Model | Description |
+    |-------|-------------|
+    | `Camel` | Sopwith Camel — WWI biplane fighter. Demonstrates rotary-engine gyroscopic effects. |
+    | `dr1` | Fokker Dr.I — WWI triplane, demonstrates three-wing aerodynamics. |
+    | `wrightFlyer1903` | Wright Flyer 1903 — the first powered aircraft. Useful for historical and educational simulations. |
+    | `Short_S23` | Short Empire C-class flying boat — 1930s airliner. Used in four Short_S23 scenario scripts. |
+    | `Submarine_Scout` | British WWI submarine scout airship. Used in `Submarine_Scout_1.xml`. |
+    | `Boeing314` | Boeing 314 Clipper — long-range flying boat airliner. |
+
+  </Accordion>
+
+  <Accordion title="Rotary-wing, UAV, and special category">
+
+    Models outside the fixed-wing category, including helicopters, drones, unpowered vehicles, and lighter-than-air craft.
+
+    | Model | Description |
+    |-------|-------------|
+    | `ah1s` | Bell AH-1S Cobra attack helicopter. Used in `ah1s_flight_test.xml`. Demonstrates rotor dynamics. |
+    | `F450` | DJI F450 quadrotor drone. Used in `Test_F450_Launch.xml`. Demonstrates multi-rotor propulsion. |
+    | `Pterosaur` | Fixed-wing UAV. Demonstrates unmanned aerial vehicle configuration. |
+    | `paraglider` | Paraglider — flexible wing unpowered glider. Used in `paraglider_rotate_test.xml`. |
+    | `weather-balloon` | High-altitude weather balloon. Used in `weather-balloon.xml` to demonstrate buoyancy and ascent through the atmosphere. |
+    | `LM` | Apollo Lunar Module — demonstrates operation in a non-atmospheric environment. |
+    | `ZLT-NT` | Zeppelin LZ N07 (ZLT-NT) semi-rigid airship. Used in `ZLT-NT-moored-1.xml`. |
+
+  </Accordion>
+
+  <Accordion title="Spacecraft and rockets">
+
+    Models for orbital mechanics, ballistic trajectories, and space vehicle simulation.
+
+    | Model | Description |
+    |-------|-------------|
+    | `J246` | Ares I-X rocket. Used in `J2460.xml` and `J2461.xml` launch scripts. |
+    | `Shuttle` | Space Shuttle Orbiter. Demonstrates hypersonic re-entry aerodynamics. |
+    | `mk82` | Mk 82 general-purpose bomb. Used in `mk82_script.xml` to demonstrate a ballistic store trajectory. |
+    | `ball` | Simple sphere with configurable mass. Used in `ball_orbit.xml`, `ball_orbit_g_torque.xml`, `ball_orbit_phase.xml`, `ball_chute.xml`, and `cannonball.xml` for orbital mechanics and ballistic trajectory verification. |
+
+  </Accordion>
+
+</AccordionGroup>
+
+## Creating your own aircraft
+
+Use `aircraft_template.xml` in the `aircraft/` directory as the starting point for a new aircraft definition. It provides the required XML skeleton with all top-level elements in place.
+
+```bash
+cp aircraft/aircraft_template.xml aircraft/myplane/myplane.xml
+```
+
+The template includes placeholder sections for:
+
+- `<metrics>` — reference area, span, chord, and aerodynamic reference point
+- `<mass_balance>` — empty weight, CG location, and moments of inertia
+- `<aerodynamics>` — lift, drag, side force, roll, pitch, and yaw coefficients
+- `<propulsion>` — engine and thruster definitions
+- `<flight_control>` — FCS channels and components
+- `<ground_reactions>` — contact point definitions
+
+<Tip>
+  Start from a similar existing aircraft rather than the blank template. For example, copy `c172p` as the base for another single-engine piston aircraft to inherit a complete, working aerodynamic dataset you can then modify.
+</Tip>

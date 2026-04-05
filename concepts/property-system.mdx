@@ -1,0 +1,243 @@
+---
+title: "Property system"
+description: "JSBSim's hierarchical property tree — how it works, how to read and write properties, and the naming conventions used across the simulation."
+---
+
+## What is the property system?
+
+JSBSim uses a hierarchical key-value store called the property tree to share simulation state between models. Every quantity that a model produces or consumes — altitude, airspeed, control surface position, engine thrust — is bound to a named property node. Models communicate by reading and writing these nodes rather than calling each other directly.
+
+The tree is managed by `FGPropertyManager`, which wraps SimGear's `SGPropertyNode`. Property paths are Unix-style slash-separated strings:
+
+```
+position/h-sl-ft
+velocities/vt-fps
+attitude/phi-rad
+fcs/aileron-cmd-norm
+propulsion/engine[0]/thrust-lbs
+```
+
+Indexed items — such as engines or gear legs — use bracket notation: `propulsion/engine[0]/thrust-lbs`, `contact/unit[1]/WOW`.
+
+## Reading and writing properties
+
+### C++
+
+`FGFDMExec` provides `GetPropertyValue()` and `SetPropertyValue()` for convenient scalar access:
+
+```cpp
+// Read altitude above sea level (ft)
+double altitude = fdmex->GetPropertyValue("position/h-sl-ft");
+
+// Write a throttle command
+fdmex->SetPropertyValue("fcs/throttle-cmd-norm", 0.75);
+```
+
+Internally these call `getDoubleValue()` / `setDoubleValue()` on the root `SGPropertyNode`.
+
+### Python
+
+The Python binding exposes the same operations via dictionary-style subscript syntax on `FGFDMExec`:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec("path/to/jsbsim/root")
+fdm.load_model("c172p")
+fdm.run_ic()
+
+while fdm.run():
+    # Read properties
+    altitude_ft  = fdm["position/h-sl-ft"]
+    airspeed_fps = fdm["velocities/vt-fps"]
+    bank_rad     = fdm["attitude/phi-rad"]
+
+    # Write properties
+    fdm["fcs/throttle-cmd-norm"] = 0.8
+    fdm["fcs/aileron-cmd-norm"]  = 0.1
+```
+
+You can also use the explicit methods `get_property_value()` and `set_property_value()`:
+
+```python
+altitude = fdm.get_property_value("position/h-sl-ft")
+fdm.set_property_value("fcs/elevator-cmd-norm", -0.05)
+```
+
+## FGPropertyNode and FGPropertyManager
+
+For lower-level access, the Python API exposes `FGPropertyNode` and `FGPropertyManager` directly.
+
+```python
+import jsbsim
+
+# Get the property manager from a running executive
+pm = fdm.get_property_manager()
+
+# Navigate to a specific node by path
+node = pm.get_node("position/h-sl-ft")
+
+if node:
+    print(node)                     # "Property 'position/h-sl-ft' (value: 8000.0)"
+    value = node.get_double_value() # 8000.0
+    node.set_double_value(9000.0)   # write a new value
+
+# Check if a property exists before accessing it
+if pm.hasNode("propulsion/engine[1]/thrust-lbs"):
+    thrust = pm.get_node("propulsion/engine[1]/thrust-lbs").get_double_value()
+```
+
+`FGPropertyNode` can also traverse the tree relatively:
+
+```python
+# Get a child node from a parent node
+fcs_node  = pm.get_node("fcs")
+aileron   = fcs_node.get_node("aileron-cmd-norm")
+
+name = aileron.get_name()                   # "aileron-cmd-norm"
+fqn  = aileron.get_fully_qualified_name()   # "fcs/aileron-cmd-norm"
+```
+
+<Warning>
+  `get_fully_qualified_name()` is described in the source as "very slow" and is intended for debugging only. Avoid calling it in tight simulation loops.
+</Warning>
+
+## Read/write attributes
+
+Each property node has access mode flags defined by the `Attribute` enum:
+
+```python
+import jsbsim
+
+class Attribute(enum.Enum):
+    NO_ATTR = 0
+    READ    = 1
+    WRITE   = 2
+```
+
+You can check or set these flags on any `FGPropertyNode`:
+
+```python
+node = pm.get_node("fcs/aileron-cmd-norm")
+
+is_readable = node.get_attribute(jsbsim.Attribute.READ)   # True
+is_writable = node.get_attribute(jsbsim.Attribute.WRITE)  # True
+
+# Make a node read-only
+node.set_attribute(jsbsim.Attribute.WRITE, False)
+```
+
+Some properties are write-only by design (for example, `simulator/do_trim` accepts a trim mode integer but produces no readable output).
+
+## Common property paths
+
+The table below lists representative properties organized by subsystem. All values use JSBSim's native unit system (feet, slugs, radians, seconds) unless the path name includes an explicit unit suffix.
+
+<AccordionGroup>
+  <Accordion title="Position and attitude">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `position/h-sl-ft` | ft | Altitude above sea level |
+    | `position/h-agl-ft` | ft | Altitude above ground level |
+    | `position/lat-geod-deg` | deg | Geodetic latitude |
+    | `position/long-gc-deg` | deg | Geocentric longitude |
+    | `attitude/phi-rad` | rad | Bank angle (roll) |
+    | `attitude/theta-rad` | rad | Pitch angle |
+    | `attitude/psi-rad` | rad | Heading angle (yaw) |
+  </Accordion>
+
+  <Accordion title="Velocities">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `velocities/vt-fps` | ft/s | True airspeed |
+    | `velocities/vc-kts` | kts | Calibrated airspeed |
+    | `velocities/ve-kts` | kts | Equivalent airspeed |
+    | `velocities/vtrue-kts` | kts | True airspeed (knots) |
+    | `velocities/u-aero-fps` | ft/s | Aero body-axis u velocity |
+    | `velocities/v-aero-fps` | ft/s | Aero body-axis v velocity |
+    | `velocities/w-aero-fps` | ft/s | Aero body-axis w velocity |
+    | `velocities/p-rad_sec` | rad/s | Roll rate |
+    | `velocities/q-rad_sec` | rad/s | Pitch rate |
+    | `velocities/r-rad_sec` | rad/s | Yaw rate |
+  </Accordion>
+
+  <Accordion title="Flight control inputs and surface positions">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `fcs/aileron-cmd-norm` | norm | Aileron command (−1 to 1) |
+    | `fcs/elevator-cmd-norm` | norm | Elevator command (−1 to 1) |
+    | `fcs/rudder-cmd-norm` | norm | Rudder command (−1 to 1) |
+    | `fcs/throttle-cmd-norm` | norm | Throttle command (0 to 1) |
+    | `fcs/flap-cmd-norm` | norm | Flap command |
+    | `fcs/mixture-cmd-norm` | norm | Mixture command |
+    | `fcs/left-aileron-pos-rad` | rad | Left aileron deflection |
+    | `fcs/elevator-pos-rad` | rad | Elevator deflection |
+    | `fcs/rudder-pos-norm` | norm | Rudder position (normalized) |
+    | `fcs/right-aileron-pos-norm` | norm | Right aileron position (normalized) |
+    | `fcs/throttle-pos-norm[0]` | norm | Throttle position, engine 0 |
+  </Accordion>
+
+  <Accordion title="Propulsion">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `propulsion/engine[0]/thrust-lbs` | lbs | Engine 0 thrust |
+    | `propulsion/engine[0]/power-hp` | hp | Engine 0 shaft power |
+    | `propulsion/engine[0]/fuel-flow-rate-gph` | gal/hr | Engine 0 fuel flow |
+    | `propulsion/engine[0]/propeller-rpm` | RPM | Propeller speed |
+    | `propulsion/magneto_cmd` | — | Magneto switch (0/1/2/3) |
+    | `propulsion/starter_cmd` | — | Starter engage (0/1) |
+  </Accordion>
+
+  <Accordion title="Atmosphere">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `atmosphere/T-R` | °R | Modeled temperature |
+    | `atmosphere/P-psf` | lb/ft² | Static pressure |
+    | `atmosphere/rho-slugs_ft3` | slug/ft³ | Air density |
+    | `atmosphere/a-fps` | ft/s | Speed of sound |
+    | `atmosphere/delta-T` | °R | Temperature perturbation |
+  </Accordion>
+
+  <Accordion title="Accelerations">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `accelerations/pdot-rad_sec2` | rad/s² | Roll angular acceleration |
+    | `accelerations/qdot-rad_sec2` | rad/s² | Pitch angular acceleration |
+    | `accelerations/rdot-rad_sec2` | rad/s² | Yaw angular acceleration |
+    | `accelerations/udot-fps2` | ft/s² | Body x acceleration |
+    | `accelerations/vdot-fps2` | ft/s² | Body y acceleration |
+    | `accelerations/wdot-fps2` | ft/s² | Body z acceleration |
+  </Accordion>
+
+  <Accordion title="Inertia and weight">
+    | Property | Unit | Description |
+    |---|---|---|
+    | `inertia/weight-lbs` | lbs | Total vehicle weight |
+    | `inertia/mass-slugs` | slugs | Total vehicle mass |
+    | `inertia/cg-x-in` | in | CG x-position in structural frame |
+  </Accordion>
+</AccordionGroup>
+
+## Discovering properties at runtime
+
+`FGFDMExec` can enumerate all bound properties for a loaded aircraft:
+
+```cpp
+// C++: query the catalog for all properties matching a prefix
+std::string results = fdmex->QueryPropertyCatalog("fcs/");
+
+// Print the entire property catalog
+fdmex->PrintPropertyCatalog();
+```
+
+```python
+# Python: query properties matching a string
+catalog = fdm.query_property_catalog("propulsion/")
+print(catalog)
+```
+
+This is useful for discovering what properties a particular aircraft model exposes before writing control scripts or output directives.
+
+<Tip>
+  Property paths are case-sensitive. Use the exact path as reported by `PrintPropertyCatalog()` or from the source `@property` annotations in the model headers.
+</Tip>

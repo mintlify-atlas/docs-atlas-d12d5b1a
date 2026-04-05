@@ -1,0 +1,228 @@
+---
+title: "Flight control system"
+description: "Build a JSBSim flight control system from XML channels and components. Wire PID controllers, actuators, filters, gains, and sensors into a complete signal-flow graph."
+---
+
+The JSBSim Flight Control System (FCS) is defined in XML as a set of named **channels**, each containing an ordered sequence of **components**. When the simulation runs, each channel executes its component list from top to bottom, passing the output of one component as the input to the next. The same framework is used for flight control laws, autopilots, and any other signal-processing system attached to the aircraft.
+
+You declare the FCS inside the `<flight_control>` element of the aircraft configuration file, or in a separate `<system>` file that the aircraft references.
+
+```xml
+<flight_control name="FCS: c172">
+  <channel name="Pitch">
+    <!-- components execute top-to-bottom -->
+  </channel>
+  <channel name="Roll">
+    <!-- ... -->
+  </channel>
+</flight_control>
+```
+
+## Available components
+
+The following component types are available in the `src/models/flight_control/` directory:
+
+<CardGroup cols={2}>
+  <Card title="FGPID" icon="sliders">
+    Proportional-integral-derivative controller with selectable integrator type and anti-windup trigger.
+  </Card>
+  <Card title="FGActuator" icon="bolt">
+    Models a mechanical actuator with lag, rate limiting, deadband, hysteresis, bias, and hard-stop clipping.
+  </Card>
+  <Card title="FGFilter" icon="wave-square">
+    Linear filters: low-pass, high-pass, band-pass, notch, Washout, lag, lead-lag, and second-order integrator.
+  </Card>
+  <Card title="FGGain" icon="chart-line">
+    Multiplies input by a constant or scheduled gain (including table-lookup scheduling).
+  </Card>
+  <Card title="FGSummer" icon="plus">
+    Sums two or more property inputs with optional per-input bias and output clipping.
+  </Card>
+  <Card title="FGSwitch" icon="toggle-on">
+    Routes one of several inputs to the output based on test conditions evaluated at each step.
+  </Card>
+  <Card title="FGKinemat" icon="arrows-up-down">
+    Models a discrete-position surface (flaps, slats) with per-segment travel times.
+  </Card>
+  <Card title="FGDeadBand" icon="circle-dot">
+    Passes zero when input is within the deadband width; passes the full input otherwise.
+  </Card>
+  <Card title="FGSensor" icon="microchip">
+    Emulates a sensor with noise, bias, quantisation, and sample-rate lag.
+  </Card>
+  <Card title="FGAccelerometer" icon="gauge">
+    Body-axis accelerometer with configurable orientation, noise, and bias.
+  </Card>
+  <Card title="FGGyro" icon="rotate">
+    Rate gyro with configurable orientation, noise, and drift.
+  </Card>
+  <Card title="FGMagnetometer" icon="magnet">
+    Magnetic field sensor referenced to the local Earth model.
+  </Card>
+  <Card title="FGWaypoint" icon="location-dot">
+    Computes range, bearing, and elevation angle to a target geodetic position.
+  </Card>
+  <Card title="FGLinearActuator" icon="arrows-left-right">
+    Linear actuator that converts a normalised command to a physical displacement.
+  </Card>
+  <Card title="FGAngles" icon="angle">
+    Computes heading, elevation, and bank angles from a pair of position properties.
+  </Card>
+  <Card title="FGDistributor" icon="code-branch">
+    Routes an input to one of several output properties based on selector conditions.
+  </Card>
+  <Card title="FGFCSFunction" icon="function">
+    Evaluates an arbitrary JSBSim math expression and stores the result as a property.
+  </Card>
+</CardGroup>
+
+## Property wiring
+
+Every component reads from one or more `<input>` properties and writes its result to one or more `<output>` properties. JSBSim automatically creates a property named after the component if no explicit `<output>` is declared. You can negate an input by prefixing the property name with a minus sign.
+
+```xml
+<summer name="Pitch Trim Sum">
+  <input>  fcs/elevator-cmd-norm </input>
+  <input>  fcs/pitch-trim-cmd-norm </input>
+  <clipto>
+    <min>-1</min>
+    <max> 1</max>
+  </clipto>
+</summer>
+```
+
+The auto-generated output property for the summer above is `fcs/pitch-trim-sum`. Subsequent components reference that string as their `<input>`.
+
+## PID controller
+
+`FGPID` implements a proportional-integral-derivative controller. Each gain (`kp`, `ki`, `kd`) can be a fixed number or a property name that is read live each frame, enabling gain scheduling.
+
+```xml
+<pid name="fcs/heading-control">
+  <input>  fcs/heading-error </input>
+  <kp>     3 </kp>
+  <ki type="ab3"> 1 </ki>
+  <kd>     1 </kd>
+</pid>
+```
+
+The `type` attribute on `<ki>` selects the numerical integrator:
+
+| Type | Method |
+|---|---|
+| `rect` | Rectangular (Euler) |
+| `trap` | Trapezoidal |
+| `ab2` | Adams-Bashforth 2nd order |
+| `ab3` | Adams-Bashforth 3rd order (default when type is omitted) |
+
+### Anti-windup
+
+Use the `<trigger>` element to wire the saturated state of a downstream actuator back to the integrator. When the trigger property is greater than zero the integrator freezes, preventing wind-up. Setting it to a negative value resets the integrator to zero.
+
+```xml
+<pid name="ap/altitude-hold-pid">
+  <input>   ap/altitude-error-ft </input>
+  <kp>      0.05  </kp>
+  <ki type="trap"> 0.01 </ki>
+  <kd>      0.02  </kd>
+  <trigger> fcs/elevator-actuator/saturated </trigger>
+</pid>
+```
+
+## Actuator
+
+`FGActuator` models a mechanical control surface actuator. Effects are applied in this order: lag → rate limiting → deadband → hysteresis → bias → position limiting.
+
+```xml
+<actuator name="fcs/gimbal-pitch-position-rad">
+  <input>           fcs/gimbal-pitch-command </input>
+  <lag>             60    </lag>
+  <rate_limit>       0.085 </rate_limit>   <!-- rad/sec -->
+  <bias>             0.002 </bias>
+  <deadband_width>   0.002 </deadband_width>
+  <hysteresis_width> 0.05  </hysteresis_width>
+  <clipto>
+    <min> -0.17 </min>
+    <max>  0.17 </max>
+  </clipto>
+</actuator>
+```
+
+Rate limits can be asymmetric by supplying two `<rate_limit>` elements with `sense="incr"` and `sense="decr"` attributes.
+
+<Note>
+The lag filter treats its parameter as a constant for the purpose of numerical integration. If you drive `<lag>` from a continuously varying property, expect a small accumulated error over time.
+</Note>
+
+The actuator automatically binds three fault-injection properties:
+
+| Property | Effect |
+|---|---|
+| `fcs/<name>/fail-zero` | Forces output to zero |
+| `fcs/<name>/fail-hardover` | Forces output to the `<clipto>` limit |
+| `fcs/<name>/fail-stuck` | Freezes output at current position |
+
+## Kinematic component (FGKinemat)
+
+`FGKinemat` is ideal for discretely-positioned surfaces like flaps. You specify a `<traverse>` list of positions and the time required to move between adjacent positions.
+
+```xml
+<kinematic name="Flaps Control">
+  <input>fcs/flap-cmd-norm</input>
+  <traverse>
+    <setting><position>  0</position><time>0</time></setting>
+    <setting><position> 10</position><time>2</time></setting>
+    <setting><position> 20</position><time>1</time></setting>
+    <setting><position> 30</position><time>1</time></setting>
+  </traverse>
+  <output>fcs/flap-pos-deg</output>
+</kinematic>
+```
+
+The input is a normalised command (0–1). The component maps it to the nearest position entry and drives the output toward that position at the rate implied by the `<time>` values.
+
+## Complete pitch channel example
+
+The c172p pitch channel sums the elevator command and pitch trim, scales the result to radians, then also produces a normalised position for display purposes.
+
+```xml
+<channel name="Pitch">
+
+  <summer name="Pitch Trim Sum">
+    <input>fcs/elevator-cmd-norm</input>
+    <input>fcs/pitch-trim-cmd-norm</input>
+    <clipto>
+      <min>-1</min>
+      <max> 1</max>
+    </clipto>
+  </summer>
+
+  <aerosurface_scale name="Elevator Control">
+    <input>fcs/pitch-trim-sum</input>
+    <gain>0.01745</gain>
+    <range>
+      <min>-28</min>
+      <max> 23</max>
+    </range>
+    <output>fcs/elevator-pos-rad</output>
+  </aerosurface_scale>
+
+  <aerosurface_scale name="Elevator Position Normalized">
+    <input>fcs/elevator-pos-deg</input>
+    <domain>
+      <min>-28</min>
+      <max> 23</max>
+    </domain>
+    <range>
+      <min>-1</min>
+      <max> 1</max>
+    </range>
+    <output>fcs/elevator-pos-norm</output>
+  </aerosurface_scale>
+
+</channel>
+```
+
+<Tip>
+Use `aerosurface_scale` (a type of `FGGain`) to convert a normalised command to physical degrees or radians. The `<domain>` and `<range>` elements define the linear mapping; `<gain>` applies a scalar multiplier to the output.
+</Tip>

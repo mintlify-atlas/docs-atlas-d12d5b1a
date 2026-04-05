@@ -1,97 +1,87 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "JSBSim — Flight Dynamics Model"
+description: "An open source, multi-platform flight dynamics & control software library for simulating the physics of aircraft, rockets, and other flight vehicles."
 ---
 
-## Setting up
+JSBSim is a nonlinear 6 Degree-of-Freedom (6-DoF) Flight Dynamics Model (FDM) written in C++. It models the forces and moments acting on an aircraft — aerodynamics, propulsion, landing gear, buoyancy — and integrates the equations of motion to produce a complete flight simulation. JSBSim ships with Python, MATLAB/Simulink, and Unreal Engine bindings, and is used in everything from academic research to DARPA's AlphaDogfight Trials.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via pip, conda, or build from source on Windows, Linux, or macOS.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first flight simulation in minutes using Python or the command line.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="book" href="/concepts/architecture">
+    Understand the FDM executive, simulation models, and property system.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/reference/fdmexec">
+    Full reference for FGFDMExec and all public Python and C++ APIs.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you can do with JSBSim
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Python integration" icon="python" href="/integrations/python">
+    Use JSBSim as a Python library with full access to all simulation state.
+  </Card>
+  <Card title="C++ API" icon="brackets-curly" href="/integrations/cpp-api">
+    Embed JSBSim directly into your C++ application or simulator.
+  </Card>
+  <Card title="MATLAB / Simulink" icon="chart-line" href="/integrations/matlab-simulink">
+    Use the S-Function to run JSBSim inside a Simulink block diagram.
+  </Card>
+  <Card title="Unreal Engine" icon="gamepad" href="/integrations/unreal-engine">
+    Drive photorealistic flight visuals with JSBSim's physics engine.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Get started in three steps
 
-## Need inspiration?
+<Steps>
+  <Step title="Install JSBSim">
+    Install the Python package from PyPI — aircraft data and example scripts are included:
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    ```bash
+    pip install jsbsim
+    ```
+  </Step>
+  <Step title="Run a simulation">
+    Load one of the bundled aircraft and execute the simulation loop:
+
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec(None)
+    fdm.load_script('scripts/c1723.xml')
+    fdm.run_ic()
+
+    while fdm.run():
+        pass
+    ```
+  </Step>
+  <Step title="Inspect simulation state">
+    Read any property from the running simulation tree:
+
+    ```python
+    altitude = fdm.get_property_value('position/h-sl-ft')
+    airspeed = fdm.get_property_value('velocities/vt-fps')
+    print(f"Altitude: {altitude:.0f} ft, Airspeed: {airspeed:.1f} fps")
+    ```
+  </Step>
+</Steps>
+
+## Key capabilities
+
+- **Nonlinear 6-DoF dynamics** — Full equations of motion with Coriolis and centrifugal effects
+- **XML-driven configuration** — Aircraft, engines, flight control systems, and scripts are fully defined in XML
+- **Accurate Earth model** — WGS84 geodetic coordinates, oblate spheroid shape, ISA 1976 atmosphere
+- **Rich propulsion models** — Piston, turbine, turboprop, rocket, electric motors, and rotors
+- **Configurable FCS** — PID controllers, actuators, filters, sensors, switches, and more
+- **Multiple output formats** — CSV, socket, FlightGear native protocol, and custom formats
+- **Battle-tested** — Verified by NASA; used in ArduPilot, PX4 SITL, and DARPA research
+
+<Note>
+  JSBSim is open source under the LGPL 2.1 license. The Python module, MATLAB interface, and Unreal Engine plugin each carry their own compatible licenses.
+</Note>

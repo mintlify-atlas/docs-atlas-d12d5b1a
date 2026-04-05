@@ -1,0 +1,294 @@
+---
+title: "Building from source"
+description: "Compile JSBSim from the GitHub repository using CMake or Visual Studio, with options for shared libraries, the Python module, and packaging."
+---
+
+Build JSBSim from source when you need to:
+
+- Target a platform or architecture not covered by the PyPI wheels
+- Contribute a bug fix or new feature to the project
+- Build a shared library for embedding in another application
+- Enable code coverage instrumentation for testing
+
+<Info>
+  JSBSim is written in standard C++17 and has **no external dependencies** beyond the bundled Expat XML library. A C/C++ compiler and CMake are all you need for a basic build.
+</Info>
+
+## Prerequisites
+
+| Requirement | Minimum version | Notes |
+|-------------|----------------|-------|
+| C++17 compiler | GCC 7, Clang 5, MSVC 2017 | Any conforming C++17 compiler works. |
+| CMake | 3.18 | Required for all platforms. |
+| Cython | Any recent version | Required only to build the Python module. |
+| Python | 3.x | Required only to build the Python module and run tests. |
+| numpy, pandas, scipy | Any recent version | Required only to run the test suite. |
+| CxxTest | Any | Required only to run C++ unit tests. |
+| Doxygen + Graphviz | Any | Required only to build the API documentation locally. |
+
+## Cloning the repository
+
+<Tabs>
+  <Tab title="HTTPS">
+    ```bash
+    git clone https://github.com/JSBSim-Team/jsbsim.git jsbsim-code
+    ```
+  </Tab>
+  <Tab title="SSH">
+    ```bash
+    git clone git@github.com:JSBSim-Team/jsbsim.git jsbsim-code
+    ```
+  </Tab>
+</Tabs>
+
+## Building with CMake
+
+CMake does not compile JSBSim directly — it generates build files for your platform's native build tool. Keep the build output separate from the source tree by building in a dedicated directory.
+
+<Steps>
+  <Step title="Enter the source directory">
+    ```bash
+    cd jsbsim-code
+    ```
+  </Step>
+  <Step title="Create and enter a build directory">
+    ```bash
+    mkdir build
+    cd build
+    ```
+  </Step>
+  <Step title="Run CMake to configure the build">
+    ```bash
+    cmake ..
+    ```
+
+    CMake detects your compiler, checks for optional dependencies (Cython, CxxTest, Doxygen), and generates the build files.
+  </Step>
+  <Step title="Compile">
+    ```bash
+    make
+    ```
+
+    Use `-j` to parallelize across CPU cores:
+
+    ```bash
+    make -j4
+    ```
+
+    The compiled `JSBSim` executable is placed in `build/src`.
+  </Step>
+</Steps>
+
+## CMake options
+
+Pass options to CMake with `-D<OPTION>=<VALUE>`. You can combine multiple options in a single command.
+
+### Build type
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_CXX_FLAGS_RELEASE="-O3 -march=native -mtune=native" \
+      -DCMAKE_C_FLAGS_RELEASE="-O3 -march=native -mtune=native" ..
+make -j4
+```
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_CXX_FLAGS_DEBUG="-g -Wall" \
+      -DCMAKE_C_FLAGS_DEBUG="-g -Wall" ..
+make
+```
+
+| Value | When to use |
+|-------|-------------|
+| `Release` | Production builds. Enables compiler optimizations. |
+| `Debug` | Development and debugging. Disables optimizations, includes debug symbols. |
+
+### Shared libraries
+
+By default JSBSim builds a static library. To build a shared library instead (which lets the JSBSim executable and the Python module share one copy):
+
+```bash
+cmake -DBUILD_SHARED_LIBS=ON ..
+make
+```
+
+### System Expat
+
+JSBSim bundles the Expat XML parsing library. If Expat is already installed system-wide and you want to use that version instead:
+
+```bash
+cmake -DSYSTEM_EXPAT=ON ..
+make
+```
+
+### Python module
+
+CMake automatically detects Cython and builds the Python module when it is found. To explicitly control this:
+
+```bash
+cmake -DBUILD_PYTHON_MODULE=ON ..
+make
+```
+
+### Install the Python module
+
+To include the Python module when running `make install`:
+
+```bash
+cmake -DINSTALL_JSBSIM_PYTHON_MODULE=ON ..
+make
+make install
+```
+
+<Warning>
+  `make install` with `INSTALL_JSBSIM_PYTHON_MODULE=ON` installs the module platform-wide and may override your Python virtual environment. Use the `pip`-based install described below if you want to install inside a virtualenv.
+</Warning>
+
+## Installing
+
+After building, install the C++ headers and library with:
+
+```bash
+make install
+```
+
+By default CMake installs to `/usr/local` on Linux and macOS. To choose a different prefix:
+
+```bash
+cmake -DCMAKE_INSTALL_PREFIX=/path/to/install ..
+make
+make install
+```
+
+### Installing the Python module with pip
+
+To install the Python module into your active virtual environment without touching system directories:
+
+```bash
+cd python
+pip install build
+python -m build --wheel
+pip install jsbsim --no-index -f dist
+```
+
+These commands:
+
+1. Navigate to the `python/` subdirectory inside your build directory.
+2. Install the Python `build` package.
+3. Build a wheel from the Cython-generated `_jsbsim.cxx` (the main library is already compiled).
+4. Install from the local `dist/` folder, bypassing PyPI.
+
+## Building with Visual Studio
+
+<Tabs>
+  <Tab title="Project file">
+    Open `JSBSim.vcxproj` in Visual Studio to build the JSBSim executable directly.
+
+    <Note>
+      Visual Studio project files are provided as a convenience and are not guaranteed to be up to date with the source. CMake is the official build tool.
+    </Note>
+  </Tab>
+  <Tab title="CMake via Visual Studio">
+    Visual Studio 2017 and later include CMake support. Open the cloned `jsbsim-code` folder directly in Visual Studio (**File → Open → Folder**) and Visual Studio will detect `CMakeLists.txt` and configure the project automatically.
+  </Tab>
+</Tabs>
+
+For detailed Visual Studio instructions, see the [Building using Visual Studio](https://jsbsim-team.github.io/jsbsim-reference-manual/mypages/quickstart-building-using-visualstudio/) guide in the JSBSim reference manual.
+
+## Running tests
+
+The test suite requires the Python module to be built and the `numpy`, `pandas`, and `scipy` packages to be installed.
+
+Run all tests from the `build` directory:
+
+```bash
+ctest -j4
+```
+
+If most tests fail with `ImportError: libJSBSim.so.1: cannot open shared object file`, the dynamic linker cannot find the shared library. Set `LD_LIBRARY_PATH` before running:
+
+```bash
+LD_LIBRARY_PATH=$PWD/src ctest -j4
+```
+
+To make this persistent for your shell session:
+
+```bash
+export LD_LIBRARY_PATH=$PWD/src:$LD_LIBRARY_PATH
+```
+
+### Filtering tests
+
+Run only tests whose name matches a pattern:
+
+```bash
+ctest -R TestDensityAltitude
+```
+
+Run all tests whose name contains a substring:
+
+```bash
+ctest -R Altitude
+```
+
+Exclude tests by name:
+
+```bash
+ctest -E Altitude
+```
+
+Run tests by index range (e.g. tests 12 through 14):
+
+```bash
+ctest -I 12,14
+```
+
+When a test fails, `ctest` logs the full output in `Testing/Temporary/LastTestsFailed.log`.
+
+### C++ code coverage
+
+C++ unit tests are written with [CxxTest](https://cxxtest.com). A code coverage report is generated automatically from CI and published at [jsbsim-team.github.io/jsbsim/coverage/](https://jsbsim-team.github.io/jsbsim/coverage/).
+
+To generate a coverage report locally, make sure CxxTest is installed and CMake detects it, then build and run `ctest` with coverage instrumentation enabled.
+
+## Building the API documentation
+
+The C++ API documentation is generated from source with Doxygen. After running `cmake`, build the docs with:
+
+```bash
+make doc
+```
+
+The HTML output is written to `build/documentation/html`. You need [Doxygen](https://www.doxygen.nl/) and [Graphviz](https://graphviz.org/) installed for this to work.
+
+The published API documentation is available at [jsbsim-team.github.io/jsbsim/](https://jsbsim-team.github.io/jsbsim/).
+
+## Packaging with CPack
+
+JSBSim can be packaged as a Debian (`.deb`) or RPM (`.rpm`) package using CPack.
+
+<Tabs>
+  <Tab title="Debian">
+    ```bash
+    cmake -DCPACK_GENERATOR=DEB ..
+    make
+    cpack
+    ```
+  </Tab>
+  <Tab title="RPM">
+    ```bash
+    cmake -DCPACK_GENERATOR=RPM ..
+    make
+    cpack
+    ```
+  </Tab>
+</Tabs>
+
+CPack produces the following packages (shown here with `.deb` extension; `.rpm` for the RPM generator):
+
+| Package | Contents |
+|---------|----------|
+| `JSBSim_[version].[platform].[arch].deb` | `JSBSim` and `aeromatic` executables (and shared libraries if `BUILD_SHARED_LIBS=ON`). |
+| `JSBSim-devel_[version].[platform].[arch].deb` | C++ development headers (and static library if `BUILD_SHARED_LIBS` is off). |
+| `python3-JSBSim_[version].[platform].[arch].deb` | Python module (only when `INSTALL_JSBSIM_PYTHON_MODULE=ON`). |

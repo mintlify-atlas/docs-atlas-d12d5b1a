@@ -1,0 +1,84 @@
+---
+title: "Installation"
+description: "Install JSBSim via pip, conda, a Windows installer, Ubuntu packages, or build it from source."
+---
+
+JSBSim provides pre-built binaries for Windows, Linux, and macOS. The Python wheel packages are the fastest path to a working installation: they include aircraft data and example scripts so you can run a simulation immediately after install.
+
+## Python module
+
+Binary wheel packages are available for Python **3.10, 3.11, 3.12, 3.13, and 3.14** on Windows, macOS, and Linux. Linux wheels meet the [PEP 600 manylinux](https://peps.python.org/pep-0600/) requirements and are compatible with most distributions.
+
+<Note>
+  Python wheels ship with aircraft data and example scripts included. You do not need to download the source archive separately.
+</Note>
+
+<Tabs>
+  <Tab title="pip">
+    ```bash
+    pip install jsbsim
+    ```
+
+    Check the [pip documentation](https://packaging.python.org/tutorials/installing-packages) for virtual environment setup and other options.
+  </Tab>
+  <Tab title="conda">
+    The JSBSim conda package is available from the `conda-forge` channel. Add the channel, then install:
+
+    ```bash
+    conda config --add channels conda-forge
+    conda install jsbsim
+    ```
+
+    To see all versions available on your platform:
+
+    ```bash
+    conda search jsbsim --channel conda-forge
+    ```
+  </Tab>
+</Tabs>
+
+## Windows installer
+
+A Windows installer (`JSBSim-1.2.4-setup.exe`) is available in the [GitHub releases section](https://github.com/JSBSim-Team/jsbsim/releases/tag/v1.2.4). It installs:
+
+- `JSBSim.exe` — the standalone FDM simulator (console mode).
+- `aeromatic.exe` — an interactive tool that builds aircraft definitions through a question-and-answer interface.
+- Aircraft data and example scripts.
+- Files needed to build the JSBSim MATLAB S-Function.
+
+Both executables are command-line tools.
+
+## Ubuntu Linux packages
+
+Debian packages for Ubuntu **22.04 LTS (Jammy)** and **24.04 LTS (Noble)** on 64-bit platforms are available in the [GitHub releases section](https://github.com/JSBSim-Team/jsbsim/releases/tag/v1.2.4). There are three packages per platform:
+
+| Package | Contents |
+|---|---|
+| `JSBSim_1.2.4-1671.amd64.deb` | `JSBSim` and `aeromatic` executables |
+| `JSBSim-devel_1.2.4-1671.amd64.deb` | C++ development headers and libraries |
+| `python3-JSBSim_1.2.4-1671.amd64.deb` | Python module for JSBSim |
+
+Download the packages from the releases page and install with `dpkg`:
+
+```bash
+sudo dpkg -i JSBSim_1.2.4-1671.amd64.deb
+```
+
+## Aircraft data and example scripts
+
+If you install JSBSim through a Python wheel (`pip` or `conda`), aircraft data and example scripts are bundled automatically.
+
+If you use the Ubuntu packages or build from source, download the data separately from the GitHub releases page:
+
+- [ZIP archive](https://github.com/JSBSim-Team/jsbsim/archive/v1.2.4.zip)
+- [tar.gz archive](https://github.com/JSBSim-Team/jsbsim/archive/v1.2.4.tar.gz)
+
+## Building from source
+
+JSBSim is written in standard C++17 with no external dependencies beyond the bundled Expat XML library. You can build it with CMake (all platforms) or Microsoft Visual Studio (Windows).
+
+For full build instructions — including CMake options, shared library builds, the Python module, and the test suite — see [Building from source](/reference/building-from-source).
+
+<Tip>
+  If you only need the Python module, `pip install jsbsim` is much faster than building from source. Building from source is primarily for contributors, packagers, or users who need a custom build configuration.
+</Tip>

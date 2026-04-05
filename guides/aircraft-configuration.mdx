@@ -1,0 +1,340 @@
+---
+title: "Aircraft configuration"
+description: "Define an aircraft for JSBSim using an XML configuration file. Learn how each top-level section works and how to wire in external engine and system files."
+---
+
+Every aircraft in JSBSim is described by a single root XML file whose top-level element is `<fdm_config>`. That file either contains its subsystem definitions inline or references separate files for engines, thrusters, and systems. The Cessna 172P (`aircraft/c172p/c172p.xml`) is the canonical example used throughout this guide.
+
+## Top-level structure
+
+```xml
+<fdm_config name="c172" version="2.0" release="BETA"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://jsbsim.sourceforge.net/JSBSim.xsd">
+
+  <fileheader> ... </fileheader>
+  <metrics> ... </metrics>
+  <mass_balance> ... </mass_balance>
+  <ground_reactions> ... </ground_reactions>
+  <propulsion> ... </propulsion>
+  <flight_control name="FCS: c172"> ... </flight_control>
+  <aerodynamics> ... </aerodynamics>
+  <output> ... </output>
+
+</fdm_config>
+```
+
+The `name` attribute on `<fdm_config>` is used as the aircraft identifier when you load the model; it does not have to match the filename.
+
+## Section reference
+
+<AccordionGroup>
+
+<Accordion title="fileheader">
+Metadata about the model file. None of the fields affect simulation behaviour; they exist for documentation and version control.
+
+```xml
+<fileheader>
+  <author> Unknown </author>
+  <filecreationdate>2002-01-01</filecreationdate>
+  <version> $Id: c172p.xml,v 1.29 2013/10/25 15:32:49 jentron Exp $ </version>
+  <description> Cessna C-172 </description>
+  <note>
+    This model was created using publicly available data ...
+  </note>
+</fileheader>
+```
+</Accordion>
+
+<Accordion title="metrics">
+Geometric reference quantities used throughout the aerodynamic model. All area, span, and chord values are reference dimensions, not physical surface areas.
+
+```xml
+<metrics>
+  <wingarea  unit="FT2"> 174   </wingarea>
+  <wingspan  unit="FT">   35.8 </wingspan>
+  <chord     unit="FT">    4.9 </chord>
+  <htailarea unit="FT2">  21.9 </htailarea>
+  <htailarm  unit="FT">   15.7 </htailarm>
+  <vtailarea unit="FT2">  16.5 </vtailarea>
+  <vtailarm  unit="FT">    0   </vtailarm>
+  <location name="AERORP" unit="IN">
+    <x> 43.2 </x>
+    <y>  0   </y>
+    <z> 59.4 </z>
+  </location>
+  <location name="EYEPOINT" unit="IN">
+    <x> 37 </x> <y> 0 </y> <z> 48 </z>
+  </location>
+  <location name="VRP" unit="IN">
+    <x> 42.6 </x> <y> 0 </y> <z> 38.5 </z>
+  </location>
+</metrics>
+```
+
+| Field | Meaning |
+|---|---|
+| `wingarea` | Reference wing area S (ft²), used in lift/drag/moment coefficient products |
+| `wingspan` | Wing span b (ft), used in roll and yaw moment normalisation |
+| `chord` | Mean aerodynamic chord c̄ (ft), used in pitch moment normalisation |
+| `htailarea` / `htailarm` | Horizontal tail area and moment arm |
+| `AERORP` | Aerodynamic reference point, usually the wing aerodynamic centre |
+| `VRP` | Visual reference point used by external visualisers |
+
+</Accordion>
+
+<Accordion title="mass_balance">
+Empty weight, moments of inertia about the body axes, the centre-of-gravity location, and any fixed point masses (crew, passengers, baggage).
+
+```xml
+<mass_balance>
+  <ixx unit="SLUG*FT2">  948 </ixx>
+  <iyy unit="SLUG*FT2"> 1346 </iyy>
+  <izz unit="SLUG*FT2"> 1967 </izz>
+  <ixy unit="SLUG*FT2">   -0 </ixy>
+  <ixz unit="SLUG*FT2">   -0 </ixz>
+  <iyz unit="SLUG*FT2">   -0 </iyz>
+  <emptywt unit="LBS"> 1500 </emptywt>
+  <location name="CG" unit="IN">
+    <x> 41 </x> <y> 0 </y> <z> 36.5 </z>
+  </location>
+  <pointmass name="Pilot">
+    <weight unit="LBS"> 180 </weight>
+    <location unit="IN">
+      <x> 36 </x> <y> -14 </y> <z> 24 </z>
+    </location>
+  </pointmass>
+  <pointmass name="Co-Pilot">
+    <weight unit="LBS"> 0 </weight>
+    <location unit="IN">
+      <x> 36 </x> <y> 14 </y> <z> 24 </z>
+    </location>
+  </pointmass>
+</mass_balance>
+```
+
+Point masses are added to the empty weight to form the total inertia tensor. Fuel mass is handled separately in the `<propulsion>` section via `<tank>` elements; JSBSim updates the inertia tensor as fuel burns off.
+
+</Accordion>
+
+<Accordion title="ground_reactions">
+Contact points that model wheel-ground and structural interactions. Each `<contact>` element has a `type` of either `BOGEY` (a rolling gear leg) or `STRUCTURE` (a rigid structural limit like a wingtip or tailskid).
+
+```xml
+<ground_reactions>
+  <contact type="BOGEY" name="NOSE">
+    <location unit="IN">
+      <x> -6.8 </x> <y> 0 </y> <z> -19.5 </z>
+    </location>
+    <static_friction>  0.8  </static_friction>
+    <dynamic_friction> 0.5  </dynamic_friction>
+    <rolling_friction> 0.02 </rolling_friction>
+    <spring_coeff  unit="LBS/FT">     1800 </spring_coeff>
+    <damping_coeff unit="LBS/FT/SEC">  600 </damping_coeff>
+    <max_steer unit="DEG"> 10 </max_steer>
+    <brake_group> NONE </brake_group>
+    <retractable> 0 </retractable>
+  </contact>
+  <contact type="BOGEY" name="LEFT_MAIN">
+    <location unit="IN">
+      <x> 58.2 </x> <y> -43 </y> <z> -15.5 </z>
+    </location>
+    <static_friction>  0.8  </static_friction>
+    <dynamic_friction> 0.5  </dynamic_friction>
+    <rolling_friction> 0.02 </rolling_friction>
+    <spring_coeff  unit="LBS/FT">     5400 </spring_coeff>
+    <damping_coeff unit="LBS/FT/SEC"> 1600 </damping_coeff>
+    <max_steer unit="DEG"> 0 </max_steer>
+    <brake_group> LEFT </brake_group>
+    <retractable> 0 </retractable>
+  </contact>
+</ground_reactions>
+```
+
+Set `<retractable>1</retractable>` on gear legs that retract, and drive the `gear/gear-pos-norm` property to move them in and out.
+
+</Accordion>
+
+<Accordion title="propulsion">
+References one or more engine files and locates their thruster(s). Fuel tanks are also declared here.
+
+```xml
+<propulsion>
+  <engine file="eng_io320">
+    <feed>0</feed>
+    <feed>1</feed>
+    <thruster file="prop_75in2f">
+      <location unit="IN">
+        <x> -37.7 </x> <y> 0 </y> <z> 26.6 </z>
+      </location>
+      <orient unit="DEG">
+        <roll> 0.0 </roll> <pitch> 0.0 </pitch> <yaw> 0.0 </yaw>
+      </orient>
+      <sense>    1 </sense>
+      <p_factor> 5 </p_factor>
+    </thruster>
+  </engine>
+
+  <tank type="FUEL">    <!-- Tank number 0 -->
+    <location unit="IN">
+      <x> 56 </x> <y> -112 </y> <z> 59.4 </z>
+    </location>
+    <capacity unit="LBS"> 185 </capacity>
+    <contents unit="LBS"> 100 </contents>
+  </tank>
+  <tank type="FUEL">    <!-- Tank number 1 -->
+    <location unit="IN">
+      <x> 56 </x> <y>  112 </y> <z> 59.4 </z>
+    </location>
+    <capacity unit="LBS"> 185 </capacity>
+    <contents unit="LBS"> 100 </contents>
+  </tank>
+</propulsion>
+```
+
+The `file` attributes on `<engine>` and `<thruster>` are resolved relative to the `engine/` directory in the JSBSim root. `<feed>` elements list the tank indices that supply that engine; the engine draws equally from all connected tanks. See the [Propulsion guide](/guides/propulsion) for the full engine type reference.
+
+</Accordion>
+
+<Accordion title="flight_control">
+Defines the flight control system (FCS) as a set of named channels. Each channel contains an ordered list of FCS components executed sequentially each time step.
+
+```xml
+<flight_control name="FCS: c172">
+  <channel name="Pitch">
+    <summer name="Pitch Trim Sum">
+      <input>fcs/elevator-cmd-norm</input>
+      <input>fcs/pitch-trim-cmd-norm</input>
+      <clipto>
+        <min>-1</min>
+        <max> 1</max>
+      </clipto>
+    </summer>
+    <aerosurface_scale name="Elevator Control">
+      <input>fcs/pitch-trim-sum</input>
+      <gain>0.01745</gain>
+      <range>
+        <min>-28</min>
+        <max> 23</max>
+      </range>
+      <output>fcs/elevator-pos-rad</output>
+    </aerosurface_scale>
+  </channel>
+  <channel name="Flaps">
+    <kinematic name="Flaps Control">
+      <input>fcs/flap-cmd-norm</input>
+      <traverse>
+        <setting><position>  0</position><time>0</time></setting>
+        <setting><position> 10</position><time>2</time></setting>
+        <setting><position> 20</position><time>1</time></setting>
+        <setting><position> 30</position><time>1</time></setting>
+      </traverse>
+      <output>fcs/flap-pos-deg</output>
+    </kinematic>
+  </channel>
+</flight_control>
+```
+
+See the [Flight control system guide](/guides/flight-control-system) for a full component reference.
+
+</Accordion>
+
+<Accordion title="aerodynamics">
+Aerodynamic forces and moments are built from coefficient functions grouped by axis. Each axis accumulates one or more `<function>` elements whose results are summed.
+
+```xml
+<aerodynamics>
+  <axis name="DRAG">
+    <function name="aero/coefficient/CDo">
+      <description>Drag_at_zero_lift</description>
+      <product>
+        <property>aero/qbar-psf</property>
+        <property>metrics/Sw-sqft</property>
+        <value>0.027</value>
+      </product>
+    </function>
+    <function name="aero/coefficient/CDwbh">
+      <description>Drag_due_to_alpha</description>
+      <product>
+        <property>aero/qbar-psf</property>
+        <property>metrics/Sw-sqft</property>
+        <property>aero/function/kCDge</property>
+        <table>
+          <independentVar lookup="row">aero/alpha-rad</independentVar>
+          <independentVar lookup="column">fcs/flap-pos-deg</independentVar>
+          <tableData>
+                0.0000  10.0000  20.0000  30.0000
+            -0.0873  0.0041   0.0000   0.0005   0.0014
+             0.0000  0.0052   0.0168   0.0251   0.0299
+             ...
+          </tableData>
+        </table>
+      </product>
+    </function>
+  </axis>
+
+  <axis name="LIFT"> ... </axis>
+  <axis name="SIDE"> ... </axis>
+  <axis name="ROLL"> ... </axis>
+  <axis name="PITCH"> ... </axis>
+  <axis name="YAW"> ... </axis>
+</aerodynamics>
+```
+
+| Axis name | Force / moment |
+|---|---|
+| `DRAG` | Axial drag force (along –X body axis) |
+| `LIFT` | Normal lift force (along –Z body axis) |
+| `SIDE` | Side force (along Y body axis) |
+| `ROLL` | Rolling moment L |
+| `PITCH` | Pitching moment M |
+| `YAW` | Yawing moment N |
+
+Coefficient functions can reference scalar values, property lookups, or multi-dimensional tables. The result of every `<function>` in an axis is added together before being applied to the equations of motion.
+
+</Accordion>
+
+<Accordion title="output">
+Configures what data JSBSim writes during the simulation. You can declare multiple `<output>` elements to write to different destinations simultaneously.
+
+```xml
+<output name="c172p_data.csv" type="CSV" rate="20">
+  <velocities>   ON </velocities>
+  <position>     ON </position>
+  <forces>       ON </forces>
+  <moments>      ON </moments>
+  <propulsion>   ON </propulsion>
+  <aerosurfaces> ON </aerosurfaces>
+</output>
+```
+
+See the [Data output guide](/guides/data-output) for a full reference of output types and subsystem flags.
+
+</Accordion>
+
+</AccordionGroup>
+
+## Referencing external files
+
+Large aircraft configurations split the engine, thruster, and system definitions into separate files. JSBSim resolves these file attributes relative to fixed search paths:
+
+| Element | `file="..."` resolved relative to |
+|---|---|
+| `<engine>` | `<jsbsim_root>/engine/` |
+| `<thruster>` | `<jsbsim_root>/engine/` |
+| `<system>` | `<jsbsim_root>/systems/` |
+| `<autopilot>` | `<jsbsim_root>/systems/` |
+
+You can also use `<system file="my_autopilot"/>` inside `<flight_control>` to load modular subsystem definitions from the `systems/` directory.
+
+<Tip>
+Use the `aircraft_template.xml` in the repository root as a starting point. It contains every section stub with comments explaining each field.
+</Tip>
+
+## Units
+
+JSBSim accepts a `unit` attribute on most numeric elements and converts to its internal system automatically. Supported unit strings include `FT`, `M`, `IN`, `FT2`, `M2`, `LBS`, `KG`, `SLUG*FT2`, `DEG`, `RAD`, `LBS/FT`, `LBS/FT/SEC`, and others. When no `unit` attribute is present, JSBSim assumes the value is already in its internal (foot-pound-second) system.
+
+<Warning>
+Always specify `unit` explicitly. Omitting it when the source data is in SI units is a common source of hard-to-diagnose mass and geometry errors.
+</Warning>

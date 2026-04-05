@@ -1,0 +1,106 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "JSBSim",
+  "projectDescription": "An open source, multi-platform Flight Dynamics Model (FDM) library written in C++ with Python, MATLAB, and Unreal Engine bindings for simulating the physics of aircraft, rockets, and other flight vehicles.",
+  "theme": "aspen",
+  "primaryColor": "#1E4D8C",
+  "lightColor": "#3A7BD5",
+  "darkColor": "#0F2C54",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/simulation-models",
+              "concepts/property-system",
+              "concepts/xml-configuration"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/aircraft-configuration",
+              "guides/flight-control-system",
+              "guides/propulsion",
+              "guides/atmosphere-environment",
+              "guides/scripting",
+              "guides/data-output"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/python",
+              "integrations/cpp-api",
+              "integrations/matlab-simulink",
+              "integrations/unreal-engine"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "API Reference",
+            "pages": [
+              "reference/fdmexec",
+              "reference/python-module",
+              "reference/flight-control-components",
+              "reference/propulsion-engines"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "reference/aircraft-models",
+              "reference/example-scripts",
+              "reference/building-from-source"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Nonlinear 6 Degree-of-Freedom (6-DoF) flight dynamics simulation",
+    "Fully configurable flight control system via XML-based configuration files",
+    "Accurate WGS84 Earth model with Coriolis and centrifugal effects",
+    "International Standard Atmosphere (1976) modeling",
+    "Python module published on PyPI and conda-forge with Cython bindings",
+    "MATLAB/Simulink S-Function interface",
+    "Unreal Engine plugin for real-time visual simulation",
+    "Wide range of propulsion models: piston, turbine, turboprop, rocket, electric",
+    "Standalone batch simulation mode via XML scripts",
+    "Used in DARPA AlphaDogfight Trials and ArduPilot/PX4 SITL testing"
+  ],
+  "publicApiSurface": [
+    "jsbsim.FGFDMExec — main simulation executive class",
+    "FGFDMExec.load_model() — load an aircraft XML model",
+    "FGFDMExec.load_script() — load and run a simulation script",
+    "FGFDMExec.run() / FGFDMExec.run_ic() — execute simulation steps",
+    "FGFDMExec.set_property_value() / get_property_value() — property access",
+    "jsbsim.FGPropagate — vehicle state (position, velocity, orientation)",
+    "jsbsim.FGAerodynamics — aerodynamic forces and moments",
+    "jsbsim.FGPropulsion — propulsion system access",
+    "jsbsim.FGAtmosphere — atmosphere model access",
+    "jsbsim.FGMassBalance — mass and inertia properties",
+    "jsbsim.FGGroundReactions — landing gear and ground contact",
+    "jsbsim.FGLinearization — linearize the FDM for control design",
+    "jsbsim.FGPropertyManager — property tree management",
+    "jsbsim.get_default_root_dir() — locate default aircraft data",
+    "jsbsim.set_logger() — configure custom logging"
+  ]
+}

@@ -1,0 +1,485 @@
+---
+title: "Flight control components"
+description: "Reference for all FCS component types used in JSBSim aircraft XML files, including their XML syntax, parameters, and signal-wiring conventions."
+---
+
+JSBSim's flight control system (FCS) is defined in the `<flight_control>` section of an aircraft XML file. Each component has an `<input>` element that names the property to read, and an optional `<output>` element that writes the component's result to a named property. Inputs may be prefixed with a minus sign to invert the signal.
+
+```xml
+<flight_control name="FCS: Cessna 172R">
+
+  <channel name="Pitch">
+    <!-- components go here -->
+  </channel>
+
+</flight_control>
+```
+
+<Info>
+  All component names automatically create a corresponding property at
+  `fcs/{component-name}` unless the name contains a `/`, in which case the name
+  is used verbatim as the property path.
+</Info>
+
+---
+
+## `<pid>` — PID controller
+
+`FGPID` implements a proportional-integral-derivative controller. By default the controller is in **ideal / parallel** form. The standard form is selected with `type="standard"`.
+
+```xml
+<pid name="fcs/pitch-rate-damper" [type="standard"]>
+  <input>  {[-]property}           </input>
+  <kp>     {number | property}     </kp>
+  <ki type="rect|trap|ab2|ab3">
+           {number | property}     </ki>
+  <kd>     {number | property}     </kd>
+  <trigger> {property}             </trigger>
+  <pvdot>  {property}              </pvdot>
+  [<clipto>
+    <min> {number | property} </min>
+    <max> {number | property} </max>
+  </clipto>]
+  [<output> {property} </output>]
+</pid>
+```
+
+<AccordionGroup>
+  <Accordion title="Parameters">
+
+| Element | Description |
+|---|---|
+| `<input>` | The error signal driving the controller. Prepend `-` to invert. |
+| `<kp>` | Proportional gain. Accepts a numeric literal or a property name. Default: `0`. |
+| `<ki>` | Integral gain. The `type` attribute selects the integration scheme (see below). Default: `0`. |
+| `<kd>` | Derivative gain. The derivative is estimated from successive inputs unless `<pvdot>` is supplied. Default: `0`. |
+| `<trigger>` | Anti-windup property. When the value is > 0 the integrator is frozen; when negative the integrator is reset to 0. Typically wired to the `saturated` property of a downstream actuator. |
+| `<pvdot>` | Optional external process-variable time derivative. Overrides the internal finite-difference derivative estimate. |
+
+**Integration schemes for `<ki>`:**
+
+| `type` attribute | Method |
+|---|---|
+| `rect` | Rectangular (Euler) |
+| `trap` | Trapezoidal (default) |
+| `ab2` | Adams-Bashforth 2nd order |
+| `ab3` | Adams-Bashforth 3rd order |
+
+  </Accordion>
+  <Accordion title="Example">
+
+```xml
+<pid name="fcs/heading-control">
+  <input> fcs/heading-error </input>
+  <kp> 3 </kp>
+  <ki type="ab3"> 1 </ki>
+  <kd> 1 </kd>
+</pid>
+```
+
+With anti-windup via an actuator's `saturated` property:
+
+```xml
+<pid name="fcs/aileron-pid">
+  <input>  fcs/roll-error           </input>
+  <kp>     2.5                       </kp>
+  <ki>     0.5                       </ki>
+  <kd>     0.1                       </kd>
+  <trigger>fcs/aileron-pos-saturated </trigger>
+  <clipto>
+    <min> -1 </min>
+    <max>  1 </max>
+  </clipto>
+  <output> fcs/aileron-cmd-norm </output>
+</pid>
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `<actuator>` — servo actuator
+
+`FGActuator` models a mechanical servo with lag, rate limits, deadband, hysteresis, and positional hard stops. Effects are applied in the order: lag → rate limit → deadband → hysteresis → bias → clip.
+
+```xml
+<actuator name="fcs/elevator-pos-rad">
+  <input> {[-]property} </input>
+  <lag>             {property | value}    </lag>
+  [<rate_limit>     {property | value}    </rate_limit>]
+  [<rate_limit sense="incr"> {property | value} </rate_limit>
+   <rate_limit sense="decr"> {property | value} </rate_limit>]
+  <bias>            {number}              </bias>
+  <deadband_width>  {number}              </deadband_width>
+  <hysteresis_width>{number}              </hysteresis_width>
+  [<clipto>
+    <min> {property | value} </min>
+    <max> {property | value} </max>
+  </clipto>]
+  [<output> {property} </output>]
+</actuator>
+```
+
+<AccordionGroup>
+  <Accordion title="Parameters">
+
+| Element | Description |
+|---|---|
+| `<lag>` | First-order lag filter coefficient. Higher values give a slower response. |
+| `<rate_limit>` | Symmetric rate limit (units/s). Supply a single element for ±limit, or two elements with `sense="incr"` / `sense="decr"` for asymmetric limits. Accepts a property name for schedule-dependent limiting. |
+| `<bias>` | Constant additive offset applied to the output. |
+| `<deadband_width>` | Width of the deadband centered on zero. Signals within ±(width/2) of zero produce no output change. |
+| `<hysteresis_width>` | Mechanical hysteresis width. The output does not change until the input has moved more than this amount from the last reversal point. |
+| `<clipto>` | Hard position stops. Automatically generates a `fcs/{name}-saturated` property that the PID `<trigger>` can consume. |
+
+**Malfunction properties** (set via `SetPropertyValue`):
+
+| Property suffix | Effect |
+|---|---|
+| `/fail-zero` | Output driven to zero |
+| `/fail-hardover` | Output driven to maximum |
+| `/fail-stuck` | Output frozen at current value |
+
+  </Accordion>
+  <Accordion title="Example">
+
+```xml
+<actuator name="fcs/gimbal-pitch-rad">
+  <input>  fcs/gimbal-pitch-cmd     </input>
+  <lag>    60                        </lag>
+  <rate_limit> 0.085 </rate_limit>
+  <bias>   0.002                     </bias>
+  <deadband_width>  0.002 </deadband_width>
+  <hysteresis_width>0.05  </hysteresis_width>
+  <clipto>
+    <min> -0.17 </min>
+    <max>  0.17 </max>
+  </clipto>
+  <output> fcs/gimbal-pitch-pos-rad </output>
+</actuator>
+```
+
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## `<filter>` variants — linear filters
+
+`FGFilter` implements first and second order linear filters using the Tustin (bilinear) substitution. Each filter type has its own XML element name.
+
+### `<lag_filter>` — first-order lag
+
+Transfer function: `C₁ / (s + C₁)`
+
+```xml
+<lag_filter name="fcs/roll-cmd-lag">
+  <input> fcs/aileron-cmd-norm </input>
+  <c1> 600 </c1>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</lag_filter>
+```
+
+### `<lead_lag_filter>` — lead-lag compensator
+
+Transfer function: `(C₁s + C₂) / (C₃s + C₄)`
+
+```xml
+<lead_lag_filter name="fcs/pitch-lead-lag">
+  <input> fcs/elevator-cmd-norm </input>
+  <c1> value|property </c1>
+  <c2> value|property </c2>
+  <c3> value|property </c3>
+  <c4> value|property </c4>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</lead_lag_filter>
+```
+
+### `<washout_filter>` — washout (high-pass)
+
+Transfer function: `s / (s + C₁)`
+
+```xml
+<washout_filter name="fcs/roll-rate-washout">
+  <input> velocities/p-rad_sec </input>
+  <c1> 1.0 </c1>
+  [<output> {property} </output>]
+</washout_filter>
+```
+
+### `<second_order_filter>` — generic second order
+
+Transfer function: `(C₁s² + C₂s + C₃) / (C₄s² + C₅s + C₆)`
+
+```xml
+<second_order_filter name="fcs/biquad">
+  <input> fcs/sensor-output </input>
+  <c1> value|property </c1>
+  <c2> value|property </c2>
+  <c3> value|property </c3>
+  <c4> value|property </c4>
+  <c5> value|property </c5>
+  <c6> value|property </c6>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</second_order_filter>
+```
+
+### `<integrator>` — pure integrator
+
+Transfer function: `C₁ / s`
+
+```xml
+<integrator name="fcs/heading-integrator">
+  <input>  fcs/heading-error </input>
+  <c1 type="rect|trap|ab2|ab3"> 1.0 </c1>
+  [<trigger> {property} </trigger>]
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</integrator>
+```
+
+The `<trigger>` element resets all previous values to zero when the referenced property is non-zero.
+
+<Note>
+  Internally JSBSim converts `integrator` components to PID controllers with `kp=0` and `kd=0`. You can equivalently use a `<pid>` with only `<ki>` specified.
+</Note>
+
+---
+
+## `<gain>` variants — scalar and scheduled gains
+
+### `<pure_gain>` — constant or property-driven gain
+
+Output = `gain × input`
+
+```xml
+<pure_gain name="fcs/roll-leveler">
+  <input> fcs/attitude/sensor/phi-rad </input>
+  <gain> 2.0 </gain>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</pure_gain>
+```
+
+### `<scheduled_gain>` — table-scheduled gain
+
+The gain is looked up from a 1-D table indexed by an `<independentVar>`. An overall multiplicative `<gain>` may be added on top of the table.
+
+```xml
+<scheduled_gain name="fcs/steer-cmd-deg">
+  <input> fcs/steer-cmd-norm </input>
+  <table>
+    <independentVar> velocities/vg-fps </independentVar>
+    <tableData>
+       10    80.0
+       50    15.0
+      150     2.0
+    </tableData>
+  </table>
+  <gain> 0.017 </gain>   <!-- degrees → radians -->
+  <output> fcs/steer-pos-rad </output>
+</scheduled_gain>
+```
+
+### `<aerosurface_scale>` — domain-to-range mapping
+
+Maps an input from a specified domain (default: [−1, 1]) to a specified range. Useful for converting normalized stick inputs to physical units.
+
+```xml
+<aerosurface_scale name="fcs/pitch-stick-force">
+  <input> fcs/elevator-cmd-norm </input>
+  <domain>
+    <min> -1 </min>
+    <max>  1 </max>
+  </domain>
+  <range>
+    <min> -50 </min>   <!-- lbf -->
+    <max>  50 </max>
+  </range>
+  <zero_centered> 1 </zero_centered>
+  [<gain> {value} </gain>]
+  [<output> {property} </output>]
+</aerosurface_scale>
+```
+
+When `<zero_centered>` is `1` (default), an input of `0` always maps to an output of `0` even if the domain or range are asymmetric.
+
+---
+
+## `<summer>` — summing junction
+
+Sums two or more input properties and adds an optional constant bias.
+
+```xml
+<summer name="fcs/roll-ap-error">
+  <input>  velocities/p-rad_sec          </input>
+  <input> -fcs/roll-ap-wing-leveler      </input>
+  <input>  fcs/roll-ap-error-integrator  </input>
+  <bias>   0.0                           </bias>
+  <clipto>
+    <min> -1 </min>
+    <max>  1 </max>
+  </clipto>
+  [<output> {property} </output>]
+</summer>
+```
+
+Any number of `<input>` elements may be present. Each input name may be preceded by `-` to negate it. Only one `<bias>` is allowed per component.
+
+---
+
+## `<switch>` — conditional routing
+
+Routes one of several property or literal values to the output depending on which test condition evaluates to `true`. The first matching test wins.
+
+```xml
+<switch name="fcs/roll-ap-switch">
+  <default value="{property | value}"/>
+  <test logic="AND|OR" value="{property | value}">
+    {property} {conditional} {property | value}
+    [<test logic="AND|OR">
+      {property} {conditional} {property | value}
+      ...
+    </test>]
+  </test>
+  ...
+  [<output> {property} </output>]
+</switch>
+```
+
+**Conditionals:** `EQ`, `NE`, `GT`, `GE`, `LT`, `LE` (case-insensitive, symbols `==`, `!=`, `>`, `>=`, `<`, `<=` also accepted).
+
+**Example — enable autopilot channel:**
+
+```xml
+<switch name="fcs/roll-ap-autoswitch">
+  <default value="0.0"/>
+  <test value="fcs/roll-ap-error-summer">
+    ap/attitude_hold == 1
+  </test>
+</switch>
+```
+
+If `ap/attitude_hold` is `1`, the switch output equals `fcs/roll-ap-error-summer`; otherwise it is `0.0`.
+
+---
+
+## `<kinematic>` — position servo with detents
+
+`FGKinemat` models a servo that moves between discrete detent positions at a specified rate. It is used for gear, flaps, spoilers, and similar discrete-position surfaces.
+
+```xml
+<kinematic name="fcs/gear-control">
+  <input> gear/gear-cmd-norm </input>
+  [<noscale/>]
+  <traverse>
+    <setting>
+      <position> 0 </position>
+      <time>     0 </time>   <!-- seconds to reach from adjacent setting -->
+    </setting>
+    <setting>
+      <position> 1 </position>
+      <time>     5 </time>
+    </setting>
+  </traverse>
+  [<gain> {value | property} </gain>]
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</kinematic>
+```
+
+<ParamField path="<noscale/>" type="flag">
+  By default the input is assumed to be in [−1, 1] and is scaled to the final `<position>` value. Adding `<noscale/>` disables this and uses the raw input value to determine the current detent.
+</ParamField>
+
+Positions must be listed in **ascending** order. The `<time>` value is the transition time in seconds from the immediately preceding setting.
+
+---
+
+## `<deadband>` — deadband
+
+Passes the input through unchanged outside a band of ±(width/2) centred on zero, and outputs zero within it.
+
+```xml
+<deadband name="fcs/aileron-deadband">
+  <input> fcs/aileron-cmd-norm </input>
+  <width> 0.05 </width>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</deadband>
+```
+
+---
+
+## `<sensor>` — modelled sensor
+
+Applies sensor imperfections — noise, drift, quantization, lag, and bias — to an input property to produce a realistic instrument reading.
+
+```xml
+<sensor name="fcs/pitch-sensor">
+  <input>  attitude/theta-rad </input>
+  <lag>    0.1                 </lag>
+  <noise variation="PERCENT|ABSOLUTE"> {number} </noise>
+  <drift_rate> {number} </drift_rate>
+  <bias>   {number} </bias>
+  <quantization name="fcs/pitch-sensor-q">
+    <bits>   {integer} </bits>
+    <min>    {number}  </min>
+    <max>    {number}  </max>
+  </quantization>
+  [<clipto> ... </clipto>]
+  [<output> {property} </output>]
+</sensor>
+```
+
+---
+
+## `<accelerometer>` — body-axis accelerometer
+
+Measures specific force (acceleration minus gravity) along a body-axis. Supports the same imperfection parameters as `<sensor>`.
+
+```xml
+<accelerometer name="fcs/accel-z">
+  <input> accelerations/a-pilot-z-ft_sec2 </input>
+  <axis>  Z </axis>
+  [<location unit="IN"> <x/><y/><z/> </location>]
+  [<noise  variation="PERCENT"> 0.02 </noise>]
+  [<output> {property} </output>]
+</accelerometer>
+```
+
+---
+
+## `<gyro>` — angular rate sensor
+
+Measures angular rate about a body axis.
+
+```xml
+<gyro name="fcs/gyro-roll">
+  <input> velocities/p-rad_sec </input>
+  <axis>  X </axis>
+  [<noise variation="ABSOLUTE"> 0.001 </noise>]
+  [<output> {property} </output>]
+</gyro>
+```
+
+---
+
+## `<waypoint>` — waypoint navigation component
+
+Computes the distance and bearing from the aircraft's current position to a fixed waypoint, outputting values to named properties.
+
+```xml
+<waypoint name="fcs/wp1-target">
+  <target_latitude_deg>  {number | property} </target_latitude_deg>
+  <target_longitude_deg> {number | property} </target_longitude_deg>
+  <source_latitude_deg>  position/lat-geod-deg </source_latitude_deg>
+  <source_longitude_deg> position/long-gc-deg  </source_longitude_deg>
+  <distance_output>  fcs/wp1-distance-ft  </distance_output>
+  <bearing_output>   fcs/wp1-bearing-deg  </bearing_output>
+</waypoint>
+```

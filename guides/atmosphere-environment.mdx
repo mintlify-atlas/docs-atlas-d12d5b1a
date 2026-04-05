@@ -1,0 +1,218 @@
+---
+title: "Atmosphere and environment"
+description: "Understand how JSBSim models the atmosphere, winds, turbulence, and the Earth itself. Read and set atmospheric state from Python or a simulation script."
+---
+
+JSBSim models the environment as three cooperating subsystems: the **atmosphere** (temperature, pressure, density, speed of sound), the **winds** model (steady wind, turbulence, gusts), and the **inertial** model (gravity, Earth rotation, WGS84 geometry). All three run every simulation step and expose their state through the property system.
+
+## Standard atmosphere
+
+The default atmosphere implementation is `FGStandardAtmosphere`, which models the International Standard Atmosphere (ISA 1976) up to 86 km (282 152 ft). The temperature profile is stored as a piecewise-linear table:
+
+| Geometric altitude (ft) | Temperature (°R) | Layer name |
+|---|---|---|
+| 0 | 518.67 | Troposphere base |
+| 36 151.6 | 390.0 | Tropopause |
+| 65 823.5 | 390.0 | Stratosphere base |
+| 105 518.4 | 411.6 | Stratosphere 2 |
+| 155 347.8 | 487.2 | Stratopause base |
+| 168 677.8 | 487.2 | Stratopause |
+| 235 570.9 | 386.4 | Mesosphere base |
+| 282 152.2 | 336.5 | Mesopause |
+
+Pressure is computed from temperature using the hydrostatic equation in each isothermal and lapse-rate layer. Density, speed of sound, viscosity, and kinematic viscosity are derived from temperature and pressure.
+
+Standard sea-level constants (internal JSBSim values):
+
+| Constant | Value | Units |
+|---|---|---|
+| `StdDaySLtemperature` | 518.67 | °Rankine |
+| `StdDaySLpressure` | 2116.228 | lbf/ft² |
+| `SHRatio` | 1.4 | — |
+
+### Atmosphere properties
+
+Read these properties at runtime to observe the current atmospheric state:
+
+| Property | Description |
+|---|---|
+| `atmosphere/T-R` | Current temperature at altitude (°Rankine) |
+| `atmosphere/P-psf` | Current pressure (lbf/ft²) |
+| `atmosphere/rho-slugs_ft3` | Current density (slug/ft³) |
+| `atmosphere/a-fps` | Speed of sound (ft/s) |
+| `atmosphere/T-sl-R` | Sea-level temperature (°Rankine) |
+| `atmosphere/P-sl-psf` | Sea-level pressure (lbf/ft²) |
+| `atmosphere/rho-sl-slugs_ft3` | Sea-level density (slug/ft³) |
+| `atmosphere/theta` | Temperature ratio T / T_sl |
+| `atmosphere/sigma` | Density ratio ρ / ρ_sl |
+| `atmosphere/delta` | Pressure ratio P / P_sl |
+| `atmosphere/a-ratio` | Speed-of-sound ratio a / a_sl |
+
+### Modifying sea-level conditions
+
+You can offset the ISA by setting non-standard sea-level temperature or pressure. This is useful for simulating hot-and-high or cold-day conditions without writing a custom atmosphere model.
+
+<Tabs>
+  <Tab title="Python">
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec('.')
+fdm.load_model('c172p')
+
+# ISA +20 °C day (convert: 20°C offset = 36°R offset)
+fdm['atmosphere/T-sl-R'] = 518.67 + 36.0
+
+# Low-pressure day (e.g., 29.0 inHg → ~1969 lbf/ft²)
+fdm['atmosphere/P-sl-psf'] = 1969.0
+
+fdm.run_ic()
+```
+  </Tab>
+  <Tab title="Script (XML)">
+```xml
+<event name="Set ISA+20 conditions">
+  <condition> simulation/sim-time-sec ge 0.0 </condition>
+  <set name="atmosphere/T-sl-R" value="554.67"/>
+  <set name="atmosphere/P-sl-psf" value="1969.0"/>
+</event>
+```
+  </Tab>
+</Tabs>
+
+## Winds model (FGWinds)
+
+`FGWinds` models all atmospheric disturbances: steady-state wind, turbulence, discrete gusts, and wind shear.
+
+### Steady wind
+
+Set wind speed and direction using the NED (north-east-down) frame properties:
+
+```python
+# 10 knots from the west (270°) = 10 kts heading east
+# 1 knot = 1.68781 ft/s
+fdm['atmosphere/wind-north-fps'] =   0.0
+fdm['atmosphere/wind-east-fps']  =  16.878   # 10 kts eastward
+fdm['atmosphere/wind-down-fps']  =   0.0
+```
+
+Alternatively, set speed and direction using the polar form:
+
+| Property | Description |
+|---|---|
+| `atmosphere/wind-mag-fps` | Wind speed magnitude (ft/s) |
+| `atmosphere/psiw-rad` | Wind direction (radians, meteorological from-direction) |
+
+### Turbulence
+
+Select a turbulence model by setting `atmosphere/turb-type`:
+
+| Value | Model |
+|---|---|
+| 0 | None (disabled) |
+| 1 | Standard (simple random turbulence) |
+| 2 | Culp model |
+| 3 | Milspec (Dryden spectrum, MIL-F-8785C) |
+| 4 | Tustin (Dryden spectrum, MIL-F-8785C) |
+
+The Milspec and Tustin models require two additional parameters:
+
+```python
+fdm['atmosphere/turb-type'] = 4   # Tustin Dryden
+fdm['atmosphere/turbulence/milspec/windspeed_at_20ft_AGL-fps'] = 25.0  # light turbulence
+fdm['atmosphere/turbulence/milspec/severity'] = 3
+```
+
+Reference severity levels from MIL-F-8785C Figure 7:
+
+| Intensity | `windspeed_at_20ft_AGL-fps` | `severity` |
+|---|---|---|
+| Light | 25 (15 kts) | 3 |
+| Moderate | 50 (30 kts) | 4 |
+| Severe | 75 (45 kts) | 6 |
+
+### Cosine gust
+
+A one-minus-cosine discrete gust lets you inject a predictable, shaped wind disturbance for handling-quality testing. Configure it via script events:
+
+```xml
+<event name="Introduce gust">
+  <condition> simulation/sim-time-sec ge 10 </condition>
+  <set name="atmosphere/cosine-gust/startup-duration-sec" value="5"/>
+  <set name="atmosphere/cosine-gust/steady-duration-sec"  value="1"/>
+  <set name="atmosphere/cosine-gust/end-duration-sec"     value="5"/>
+  <set name="atmosphere/cosine-gust/magnitude-ft_sec"     value="30"/>
+  <set name="atmosphere/cosine-gust/frame"                value="2"/>
+  <set name="atmosphere/cosine-gust/X-velocity-ft_sec"    value="-1"/>
+  <set name="atmosphere/cosine-gust/Y-velocity-ft_sec"    value="0"/>
+  <set name="atmosphere/cosine-gust/Z-velocity-ft_sec"    value="0"/>
+  <set name="atmosphere/cosine-gust/start"                value="1"/>
+</event>
+```
+
+## Earth model and geodetic coordinates
+
+JSBSim uses the WGS84 oblate spheroid for all coordinate computations. Positions throughout the simulation are maintained in an Earth-centred, Earth-fixed (ECEF) frame and exposed through several coordinate systems:
+
+| Property group | Coordinate system |
+|---|---|
+| `position/lat-geod-deg`, `position/long-deg`, `position/geod-alt-ft` | Geodetic (WGS84 latitude, longitude, altitude) |
+| `position/lat-gc-deg` | Geocentric latitude |
+| `position/h-agl-ft` | Height above ground level (from terrain model) |
+| `position/h-sl-ft` | Height above sea level |
+| `position/radius-to-vehicle-ft` | Geocentric radius from Earth centre |
+
+<Note>
+Geodetic latitude (`position/lat-geod-deg`) and geocentric latitude (`position/lat-gc-deg`) differ by up to approximately 0.19° at mid-latitudes. Use geodetic latitude for waypoint navigation and real-world comparisons; the simulator uses geocentric latitude internally for inertial calculations.
+</Note>
+
+## Gravity (FGInertial)
+
+The `FGInertial` model computes gravitational acceleration using a simplified model that accounts for the oblateness of the WGS84 ellipsoid. Gravity varies with both altitude and geodetic latitude.
+
+```python
+# Read current gravitational acceleration (ft/s²)
+g = fdm['inertia/gravity-ft_sec2']
+```
+
+Earth rotation is modelled by `FGInertial` and contributes Coriolis and centrifugal accelerations to the equations of motion. For most flight-dynamics purposes these are negligible, but they become significant for very long-range or high-altitude trajectories.
+
+## Reading atmosphere state from Python
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec('.')
+fdm.load_model('c172p')
+fdm['ic/h-agl-ft']      = 5000.0
+fdm['ic/vc-kts']        = 100.0
+fdm.run_ic()
+
+# Run for a few seconds
+for _ in range(600):
+    fdm.run()
+
+altitude_ft    = fdm['position/h-sl-ft']
+temp_R         = fdm['atmosphere/T-R']
+temp_C         = (temp_R / 1.8) - 273.15
+pressure_psf   = fdm['atmosphere/P-psf']
+density        = fdm['atmosphere/rho-slugs_ft3']
+speed_sound    = fdm['atmosphere/a-fps']
+sigma          = fdm['atmosphere/sigma']
+
+print(f"Altitude:       {altitude_ft:.0f} ft")
+print(f"Temperature:    {temp_C:.1f} °C")
+print(f"Pressure:       {pressure_psf:.1f} psf")
+print(f"Density ratio:  {sigma:.4f}")
+print(f"Speed of sound: {speed_sound:.1f} ft/s")
+```
+
+## Alternative atmosphere models
+
+Two additional atmosphere implementations are available in `src/models/atmosphere/`:
+
+| Class | Description |
+|---|---|
+| `FGStandardAtmosphere` | ISA 1976 (default) |
+| `FGMSIS` | NRLMSISE-00 model — high-fidelity thermosphere model useful above 86 km |
+| `FGMars` | Mars atmosphere model for planetary entry simulations |

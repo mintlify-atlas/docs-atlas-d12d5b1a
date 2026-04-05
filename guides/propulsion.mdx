@@ -1,0 +1,232 @@
+---
+title: "Propulsion"
+description: "Configure engines, thrusters, and fuel tanks in JSBSim. Choose from piston, turbine, turboprop, rocket, and electric engine models, and pair each one with the appropriate thruster type."
+---
+
+The JSBSim propulsion system consists of three interacting object types: **engines**, **thrusters**, and **tanks**. An engine converts fuel energy into shaft power or exhaust thrust. A thruster turns that power into a force that acts on the airframe. Tanks supply fuel or oxidiser to the engines and move the aircraft's centre of gravity as their contents change.
+
+You declare all three inside the `<propulsion>` section of the aircraft configuration file.
+
+## Engine types
+
+<AccordionGroup>
+
+<Accordion title="FGPiston — reciprocating piston engine">
+Models a normally aspirated or supercharged reciprocating engine using power and fuel-flow tables. Supports up to three boost speeds. The fuel-air mixture, magneto state, primer, and starter are all individually controllable through the property system.
+
+Relevant control properties:
+
+| Property | Description |
+|---|---|
+| `propulsion/engine[n]/running` | `1` when the engine is running |
+| `propulsion/engine[n]/starter` | Set to `1` to engage the starter motor |
+| `propulsion/engine[n]/magnetos` | `0` = off, `1` = left, `2` = right, `3` = both |
+| `fcs/throttle-cmd-norm[n]` | Throttle command (0–1) |
+| `fcs/mixture-cmd-norm[n]` | Mixture command (0–1) |
+
+Engine file format (`engine/*.xml`):
+
+```xml
+<piston_engine name="IO-320">
+  <minmp unit="INHG">         6.5  </minmp>
+  <maxmp unit="INHG">        28.5  </maxmp>
+  <displacement unit="IN3"> 319.8  </displacement>
+  <maxhp>                    160    </maxhp>
+  <cycles>                     4    </cycles>
+  <idlerpm>                  700    </idlerpm>
+  <maxrpm>                  2700    </maxrpm>
+  <maxthrottle>                1.0  </maxthrottle>
+  <minthrottle>                0.1  </minthrottle>
+  <bsfc unit="LBS/HP*HR">    0.45  </bsfc>
+</piston_engine>
+```
+</Accordion>
+
+<Accordion title="FGTurbine — jet turbine engine">
+Models a turbojet or turbofan using thrust tables parameterised by Mach number and altitude. The engine phases are: `Off`, `SpinUp`, `Start`, `Run`, `Stall`, `Seize`, and `Trim`.
+
+**Starting on the ground:**
+
+<Steps>
+  <Step title="Engage the starter">
+    Set `propulsion/engine[n]/starter` to `1`. The engine spins up to approximately 25% N2 (fan rotor) / 5.2% N1 (core rotor). The exact value is controlled by `<startnX>` in the engine file.
+  </Step>
+  <Step title="Open the fuel cutoff">
+    After N2 reaches 15%, set `propulsion/engine[n]/cutoff` to `0`. With fuel available, the engine accelerates to idle. The starter disengages automatically.
+  </Step>
+</Steps>
+
+**Starting in the air:** bring airspeed up to achieve at least 15% N2 windmill, then set `cutoff` to `0`.
+
+Engine file format:
+
+```xml
+<turbine_engine name="J52-P-8A">
+  <milthrust unit="LBS"> 8500  </milthrust>
+  <maxthrust unit="LBS"> 8500  </maxthrust>
+  <bypassratio>           0    </bypassratio>
+  <bleed>                 0.04 </bleed>
+  <tsfc>                  0.84 </tsfc>
+  <idlen1>               30.0  </idlen1>
+  <idlen2>               60.0  </idlen2>
+  <maxn1>               100.0  </maxn1>
+  <maxn2>               100.0  </maxn2>
+  <augmented>             0    </augmented>
+  <injected>              0    </injected>
+</turbine_engine>
+```
+
+Key parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `milthrust` | Military (dry) thrust at sea level static |
+| `maxthrust` | Afterburning thrust at sea level static |
+| `bypassratio` | Bypass ratio; affects spool-up rate estimation |
+| `bleed` | Fractional thrust reduction due to bleed losses |
+| `tsfc` | Thrust-specific fuel consumption (cruise), lbm/hr/lbf |
+| `augmented` | `1` = afterburner installed |
+| `augmethod` | How the afterburner is activated (0 = property, 1 = throttle >99%, 2 = FCS expansion) |
+
+</Accordion>
+
+<Accordion title="FGTurboProp — turboprop engine">
+A turboprop is a gas-turbine engine coupled to a propeller. It uses the same spool-up and cutoff logic as `FGTurbine` but delivers shaft power to the propeller rather than exhaust thrust directly. The propeller model is `FGPropeller`.
+</Accordion>
+
+<Accordion title="FGRocket — rocket engine">
+Solid or liquid-propellant rocket. Thrust is computed from a user-supplied specific impulse and oxidiser-to-fuel ratio. For liquid rockets, propellant flow is throttle-dependent.
+
+```xml
+<rocket_engine name="Estes E9">
+  <isp>    100   </isp>
+  <maxthrottle> 1.0 </maxthrottle>
+  <minthrottle> 0.0 </minthrottle>
+  <slfuelflowmax unit="LBS/SEC"> 0.016 </slfuelflowmax>
+</rocket_engine>
+```
+</Accordion>
+
+<Accordion title="FGElectric — electric motor">
+A simple electric motor model that converts throttle input to shaft torque. No fuel tank is required; power consumption can be modelled through the property system.
+</Accordion>
+
+<Accordion title="FGBrushLessDCMotor — brushless DC motor">
+A higher-fidelity brushless DC motor model typically used for UAV propulsion. Motor constants (KV, resistance, inductance) can be specified directly.
+</Accordion>
+
+</AccordionGroup>
+
+## Thruster types
+
+Each `<engine>` element in the aircraft file must contain exactly one `<thruster>` block.
+
+| Type | Use with | Description |
+|---|---|---|
+| `FGPropeller` | FGPiston, FGTurboProp, FGElectric, FGBrushLessDCMotor | Variable- or fixed-pitch propeller with blade-element thrust and torque tables |
+| `FGNozzle` | FGTurbine, FGRocket | Exhaust nozzle that converts engine thrust coefficient directly to force |
+| `FGRotor` | FGPiston, FGElectric | Helicopter main or tail rotor with flapping dynamics |
+| `FGDirect` | FGTurbine | Passes engine thrust directly to the airframe; used with most jet models |
+
+## Tank types
+
+`FGTank` supports two types: `FUEL` for conventional propellant and `OXIDIZER` for rocket oxidiser. Tank index numbers are assigned in document order (first tank is index 0). Connect a tank to an engine with `<feed>N</feed>` inside `<engine>`.
+
+```xml
+<tank type="FUEL">           <!-- Tank 0 -->
+  <location unit="IN">
+    <x>  56 </x>
+    <y> -112 </y>
+    <z>  59.4 </z>
+  </location>
+  <capacity unit="LBS"> 185 </capacity>
+  <contents unit="LBS"> 100 </contents>
+</tank>
+<tank type="FUEL">           <!-- Tank 1 -->
+  <location unit="IN">
+    <x>  56 </x>
+    <y>  112 </y>
+    <z>   59.4 </z>
+  </location>
+  <capacity unit="LBS"> 185 </capacity>
+  <contents unit="LBS"> 100 </contents>
+</tank>
+```
+
+JSBSim decrements each tank's `contents` as fuel burns and updates the aircraft inertia tensor accordingly.
+
+## Complete propulsion section example (c172p)
+
+```xml
+<propulsion>
+  <engine file="eng_io320">
+    <feed>0</feed>
+    <feed>1</feed>
+    <thruster file="prop_75in2f">
+      <location unit="IN">
+        <x> -37.7 </x>
+        <y>   0   </y>
+        <z>  26.6 </z>
+      </location>
+      <orient unit="DEG">
+        <roll>  0.0 </roll>
+        <pitch> 0.0 </pitch>
+        <yaw>   0.0 </yaw>
+      </orient>
+      <sense>    1 </sense>
+      <p_factor> 5 </p_factor>
+    </thruster>
+  </engine>
+
+  <tank type="FUEL">
+    <location unit="IN">
+      <x>  56 </x> <y> -112 </y> <z> 59.4 </z>
+    </location>
+    <capacity unit="LBS"> 185 </capacity>
+    <contents unit="LBS"> 100 </contents>
+  </tank>
+  <tank type="FUEL">
+    <location unit="IN">
+      <x>  56 </x> <y>  112 </y> <z> 59.4 </z>
+    </location>
+    <capacity unit="LBS"> 185 </capacity>
+    <contents unit="LBS"> 100 </contents>
+  </tank>
+</propulsion>
+```
+
+The `<sense>` element sets propeller rotation direction (1 = clockwise viewed from front). `<p_factor>` controls the p-factor asymmetric thrust coefficient.
+
+## Engine state properties
+
+Use these properties from Python or a script to read and control the engine at runtime:
+
+```python
+import jsbsim
+fdm = jsbsim.FGFDMExec('.')
+fdm.load_model('c172p')
+fdm.run_ic()
+
+# Start the engine
+fdm['propulsion/engine/starter'] = 1
+fdm['propulsion/magneto_cmd']    = 3   # both magnetos
+fdm['fcs/throttle-cmd-norm[0]']  = 0.3
+
+for _ in range(300):
+    fdm.run()
+
+print('Running:', fdm['propulsion/engine/running'])
+print('RPM:',     fdm['propulsion/engine/engine-rpm'])
+print('Fuel remaining (lbs):', fdm['propulsion/tank/contents-lbs'])
+```
+
+Commonly read engine properties:
+
+| Property | Description |
+|---|---|
+| `propulsion/engine[n]/running` | Engine running state (boolean) |
+| `propulsion/engine[n]/engine-rpm` | Crankshaft/fan RPM |
+| `propulsion/engine[n]/thrust-lbs` | Current thrust in pounds |
+| `propulsion/engine[n]/fuel-flow-rate-pps` | Fuel flow rate in lb/s |
+| `propulsion/tank[n]/contents-lbs` | Remaining fuel in pounds |
+| `propulsion/total-fuel-lbs` | Sum across all tanks |

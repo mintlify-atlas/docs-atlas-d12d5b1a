@@ -1,80 +1,173 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Run your first JSBSim flight simulation in minutes using Python or the command line."
 ---
 
-## Get started in three steps
+This guide gets you to a running simulation as fast as possible. You will install JSBSim, load a bundled aircraft script, execute the simulation loop, and read state back from the running simulation.
 
-Get your documentation site running locally and make your first customization.
+## Python quickstart
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Install JSBSim">
+    Install the Python package from PyPI. The wheel includes aircraft data and example scripts.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    pip install jsbsim
+    ```
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Verify the install">
+    Confirm the package is installed and locate the bundled aircraft data:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```python
+    import jsbsim
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    print(jsbsim.__version__)
+    print(jsbsim.get_default_root_dir())
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    `get_default_root_dir()` returns the path to the directory that contains the `aircraft/`, `engines/`, and `scripts/` folders installed alongside the wheel.
+  </Step>
 
-### Step 3: Go live
+  <Step title="Run a simulation">
+    Create an `FGFDMExec` instance, load one of the bundled scripts, and step through the simulation:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec(None)  # None uses the default aircraft data directory
+    fdm.load_script('scripts/c1723.xml')
+    fdm.run_ic()
+
+    while fdm.run():
+        pass
+    ```
+
+    Passing `None` to `FGFDMExec` tells JSBSim to use the data installed with the wheel. The script `scripts/c1723.xml` is one of the many example scripts included by default.
+  </Step>
+
+  <Step title="Read simulation state">
+    Use `get_property_value()` to read any property from the simulation tree during or after the loop:
+
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec(None)
+    fdm.load_script('scripts/c1723.xml')
+    fdm.run_ic()
+
+    while fdm.run():
+        altitude = fdm.get_property_value('position/h-sl-ft')
+        airspeed = fdm.get_property_value('velocities/vt-fps')
+        print(f"Alt: {altitude:.0f} ft  Airspeed: {airspeed:.1f} fps")
+    ```
+
+    Properties follow the path convention `subsystem/property-name`. See the [property system reference](/concepts/property-system) for a full listing.
+  </Step>
+</Steps>
+
+## Command-line quickstart
+
+If you installed JSBSim through the Windows installer or Ubuntu packages, you can run a simulation directly from the shell.
+
+<Steps>
+  <Step title="Navigate to the data directory">
+    Change to the root of the aircraft data package (the directory that contains `aircraft/`, `engines/`, and `scripts/`).
+  </Step>
+
+  <Step title="Run a script">
+    Pass a script path to `JSBSim.exe` (Windows) or `JSBSim` (Linux):
+
+    ```bash
+    JSBSim.exe --script=scripts/c1721.xml
+    ```
+
+    JSBSim will execute the script in batch mode and print output to the console.
+  </Step>
+
+  <Step title="See all options">
+    ```bash
+    JSBSim.exe --help
+    ```
+  </Step>
+</Steps>
+
+## Complete runnable example
+
+The following self-contained script runs a simulation and prints altitude and airspeed at each time step:
+
+```python
+import jsbsim
+
+# Create the FDM executive using the default (wheel-bundled) aircraft data.
+fdm = jsbsim.FGFDMExec(None)
+
+# Load an example script. c1723.xml flies the c172 aircraft.
+fdm.load_script('scripts/c1723.xml')
+
+# Apply initial conditions from the script.
+fdm.run_ic()
+
+# Step the simulation until the script signals completion.
+while fdm.run():
+    t   = fdm.get_property_value('simulation/sim-time-sec')
+    alt = fdm.get_property_value('position/h-sl-ft')
+    vt  = fdm.get_property_value('velocities/vt-fps')
+    print(f"t={t:6.1f}s  alt={alt:8.0f}ft  vt={vt:6.1f}fps")
+```
+
+## Available example scripts
+
+The wheel includes several ready-to-run scripts. Commonly used ones include:
+
+| Script | Description |
+|---|---|
+| `scripts/c1721.xml` | Cessna 172 takeoff and flight |
+| `scripts/c1723.xml` | Cessna 172 cruise |
+
+To list all installed scripts, inspect the `scripts/` subdirectory of the default root directory:
+
+```python
+import os
+import jsbsim
+
+scripts_dir = os.path.join(jsbsim.get_default_root_dir(), 'scripts')
+for name in sorted(os.listdir(scripts_dir)):
+    print(name)
+```
+
+## C++ quickstart
+
+If you are embedding JSBSim in a C++ application, the minimal entry point is:
+
+```cpp
+#include <FGFDMExec.h>
+
+int main(int argc, char **argv)
+{
+    JSBSim::FGFDMExec FDMExec;
+    FDMExec.LoadScript(SGPath(argv[1]));
+    FDMExec.RunIC();
+    bool result = true;
+    while (result) result = FDMExec.Run();
+}
+```
+
+See the [C++ API guide](/integrations/cpp-api) for the full API surface.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Understand the FDM executive, simulation models, and how they connect.
+  </Card>
+  <Card title="Python integration" icon="python" href="/integrations/python">
+    Full guide to using JSBSim as a Python library, including trimming and Jupyter examples.
+  </Card>
+  <Card title="Aircraft configuration" icon="plane" href="/guides/aircraft-configuration">
+    Learn how to write and customize XML aircraft definitions.
+  </Card>
+  <Card title="Property system" icon="list-tree" href="/concepts/property-system">
+    Explore the full property tree used to read and write simulation state.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

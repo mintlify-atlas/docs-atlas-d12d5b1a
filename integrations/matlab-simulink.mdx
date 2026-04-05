@@ -1,0 +1,187 @@
+---
+title: "MATLAB and Simulink"
+description: "Connect JSBSim to MATLAB and Simulink through a compiled S-Function MEX block that drives the flight dynamics model from a Simulink diagram."
+---
+
+JSBSim provides an S-Function that integrates the flight dynamics model into Simulink as a standard block. You compile the S-Function once into a MEX file, then use the resulting block in any Simulink diagram.
+
+<Note>
+The JSBSim MATLAB interface is licensed under the [BSD license](https://opensource.org/licenses/bsd-license.php). The full license text is in `matlab/LICENSE.txt` in the repository.
+</Note>
+
+## Requirements
+
+- MATLAB with Simulink
+- A C++ compiler supported by MEX (Visual Studio on Windows, Clang/GCC on macOS/Linux)
+- JSBSim built from source, or installed via the Windows installer
+
+## Building the S-Function
+
+<Tabs>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Install JSBSim">
+        Download `JSBSim-1.2.4-setup.exe` from the [JSBSim releases page](https://github.com/JSBSim-Team/jsbsim/releases) and install it. The installer places everything under a root directory with this structure:
+
+        ```
+        <JSBSim root>/
+           aircraft/
+           engine/
+           include/
+           lib/
+           matlab/
+           scripts/
+           systems/
+        ```
+
+        <Note>
+        The library at `lib\JSBSim.lib` is compiled with Microsoft Visual Studio Enterprise 2022.
+        </Note>
+      </Step>
+      <Step title="Configure the MEX compiler">
+        From the MATLAB command prompt, set the default C++ compiler:
+
+        ```matlab
+        mex -setup CPP
+        ```
+
+        MEX detects your installed C++ compiler and configures itself to build `.mexw64` files.
+      </Step>
+      <Step title="Run JSBSimSimulinkCompile.m">
+        Change the MATLAB working directory to `<JSBSim root>/matlab` and run the compile script:
+
+        ```matlab
+        JSBSimSimulinkCompile
+        ```
+
+        After compilation, you will have `<JSBSim root>/matlab/JSBSim_SFunction.mexw64`.
+      </Step>
+      <Step title="Stage files for testing">
+        Copy the MEX file, the example model, and the test script to the JSBSim root directory:
+
+        ```matlab
+        % From <JSBSim root>/matlab, copy to <JSBSim root>
+        copyfile('JSBSim_SFunction.mexw64', '../')
+        copyfile('ex737cruise.slx', '../')
+        copyfile('TestJSBSim.m', '../')
+        copyfile('clearSF.m', '../')
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="macOS">
+    <Steps>
+      <Step title="Build JSBSim from source">
+        Clone the repository and build with CMake:
+
+        ```bash
+        git clone https://github.com/JSBSim-Team/jsbsim.git
+        cd jsbsim
+        mkdir build && cd build
+        cmake ..
+        make -j4
+        ```
+      </Step>
+      <Step title="Stage resource files">
+        Copy the aircraft, engine, and scripts directories into `build/src/` so the S-Function can find them at runtime:
+
+        ```bash
+        cd ..
+        cp -r aircraft build/src/aircraft
+        cp -r engine build/src/engine
+        cp -r scripts build/src/scripts
+        ```
+      </Step>
+      <Step title="Run JSBSimSimulinkCompiler.m">
+        Open `matlab/JSBSimSimulinkCompiler.m` in MATLAB. Ensure the line under `For MacOS:` is the only one that is not commented out, then run the script from the MATLAB command line:
+
+        ```matlab
+        JSBSimSimulinkCompiler
+        ```
+      </Step>
+      <Step title="Copy compiled files to build/src/">
+        ```bash
+        cp matlab/JSBSim_SFunction.mexmaci64 build/src/
+        cp matlab/ex737cruise.slx             build/src/
+        cp matlab/TestJSBSim.m               build/src/
+        cp matlab/clearSF.m                  build/src/
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## The JSBSimInterface
+
+`JSBSimInterface` (in `matlab/JSBSimInterface.h` and `JSBSimInterface.cpp`) is the C++ class that sits between the Simulink S-Function and JSBSim's `FGFDMExec`. It handles:
+
+- Setting the aircraft model and data paths
+- Applying initial conditions (altitude, velocity, attitude, geographic position)
+- Forwarding control surface and throttle commands from Simulink input ports to JSBSim properties
+- Advancing the simulation by one time step per Simulink sample
+- Returning state variables (position, velocity, attitude, accelerations) to Simulink output ports
+
+The S-Function block exposes these ports transparently so you connect standard Simulink signals to drive JSBSim like any other plant model.
+
+## The ex737cruise example
+
+`matlab/ex737cruise.slx` is a ready-to-run Simulink model that simulates a Boeing 737 in cruise. It uses the `JSBSim_SFunction` block configured to run the `scripts/737_cruise` script.
+
+<Steps>
+  <Step title="Open the model">
+    With `JSBSim_SFunction.mexw64` (or `.mexmaci64`) and `ex737cruise.slx` both present in your working directory, open the model:
+
+    ```matlab
+    open_system('ex737cruise')
+    ```
+  </Step>
+  <Step title="Run the test script">
+    `TestJSBSim.m` exercises the model end-to-end:
+
+    ```matlab
+    TestJSBSim
+    ```
+
+    The script runs the Simulink model, then clears the S-Function state:
+
+    ```matlab
+    disp('Run 737 example');
+    fprintf('Current directory: %s', pwd)
+    sim('ex737cruise');
+    clear functions;
+    clear all;
+    disp('JSBSim S-Function Reset');
+    ```
+
+    After a successful run, Simulink outputs altitude, velocity, and attitude time histories.
+  </Step>
+  <Step title="Reset the S-Function">
+    The JSBSim S-Function holds internal state between runs. Always reset it before running again:
+
+    ```matlab
+    clearSF
+    ```
+
+    <Warning>
+    If you do not call `clearSF` between simulation runs, the S-Function reuses stale state from the previous run and produces incorrect results.
+    </Warning>
+  </Step>
+</Steps>
+
+## Adapting to your own model
+
+To use a different aircraft or script:
+
+1. Double-click the `JSBSim_SFunction` block in your Simulink diagram.
+2. Set the **Script** parameter to the path of your JSBSim script file, relative to the directory that contains `aircraft/` and `engine/`.
+3. Ensure `aircraft/` and `engine/` are present in that same directory alongside the compiled MEX file.
+
+Once you have a working S-Function, the only runtime dependencies are:
+
+- The compiled MEX file (`JSBSim_SFunction.mexw64` or `.mexmaci64`)
+- An `aircraft/` directory containing your aircraft definition
+- An `engine/` directory containing engine definitions referenced by the aircraft
+
+## Further reference
+
+For the full build instructions and configuration details, see `matlab/README.md` in the JSBSim repository.

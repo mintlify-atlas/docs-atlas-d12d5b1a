@@ -1,0 +1,249 @@
+---
+title: "Simulation models"
+description: "A reference to each physics model in JSBSim — what it computes, what it reads, and what it produces for the rest of the simulation."
+---
+
+## Model base class
+
+Every model in JSBSim inherits from `FGModel` (`src/models/FGModel.h`). The base class provides:
+
+- A `Run(bool Holding)` virtual method called by `FGFDMExec` each frame
+- A configurable execution rate (`SetRate()` / `GetRate()`) so models can run at sub-frame intervals
+- A shared `FGPropertyManager` for reading and writing properties
+- An `Upload()` helper for loading model data from a separate XML file
+
+`FGFDMExec` maintains a `std::vector<std::shared_ptr<FGModel>>` and iterates through it in the fixed order defined by the `eModels` enum. See [Architecture](/concepts/architecture) for that ordering.
+
+## Models
+
+<AccordionGroup>
+  <Accordion title="FGPropagate — equations of motion">
+    **Header:** `src/models/FGPropagate.h`
+
+    `FGPropagate` integrates the Equations of Motion (EOM) to propagate the vehicle state. It accounts for a rotating Earth by resolving translational motion in the Earth-Centered Inertial (ECI) frame and rotational motion in the body frame.
+
+    **State vector** (`VehicleState` struct):
+    - Translational position as an `FGLocation` (Earth-centered coordinates)
+    - Translational velocity in the ECI frame
+    - Attitude quaternion (`FGQuaternion`)
+    - Body angular velocity (p, q, r)
+
+    You can select the integration algorithm per axis via properties:
+
+    ```
+    simulation/integrator/rate/rotational
+    simulation/integrator/rate/translational
+    simulation/integrator/position/rotational
+    simulation/integrator/position/translational
+    ```
+
+    Valid values: `0` (freeze), `1` (rectangular Euler), `2` (trapezoidal), `3` (Adams-Bashforth 2), `4` (Adams-Bashforth 3), `5` (Adams-Bashforth 4).
+
+    **Key output properties:**
+
+    | Property | Description |
+    |---|---|
+    | `position/h-sl-ft` | Altitude above sea level (ft) |
+    | `position/lat-geod-deg` | Geodetic latitude (deg) |
+    | `position/long-gc-deg` | Geocentric longitude (deg) |
+    | `velocities/vt-fps` | True airspeed (ft/s) |
+    | `attitude/phi-rad` | Bank angle (rad) |
+    | `attitude/theta-rad` | Pitch angle (rad) |
+    | `attitude/psi-rad` | Heading angle (rad) |
+  </Accordion>
+
+  <Accordion title="FGAerodynamics — aerodynamic forces and moments">
+    **Header:** `src/models/FGAerodynamics.h`
+
+    `FGAerodynamics` owns the aerodynamic force and moment coefficient definitions for the aircraft. Coefficients are expressed as functions — typically lookup tables indexed by angle of attack, sideslip, Mach number, or control surface deflection — and are defined in the `<aerodynamics>` section of the aircraft XML.
+
+    The model also handles:
+    - Alpha stall limits and hysteresis (`<alphalimits>`, `<hysteresis_limits>`)
+    - Aerodynamic reference-point shift along the x-axis (`<aero_ref_pt_shift_x>`)
+    - Ground effect
+
+    Forces are computed in the wind or body frame and rotated as needed before being summed in `FGAircraft`.
+
+    **Key output properties:**
+
+    | Property | Description |
+    |---|---|
+    | `aerodynamics/cl-squared` | Lift coefficient squared |
+    | `aerodynamics/qbar-area` | Dynamic pressure × reference area |
+    | `forces/fbx-aero-lbs` | Aerodynamic body-axis x force (lbs) |
+    | `forces/fby-aero-lbs` | Aerodynamic body-axis y force (lbs) |
+    | `forces/fbz-aero-lbs` | Aerodynamic body-axis z force (lbs) |
+  </Accordion>
+
+  <Accordion title="FGFCS — flight control system">
+    **Header:** `src/models/FGFCS.h`
+
+    `FGFCS` encapsulates the flight control system, autopilot, and any generic system logic. It owns a list of `FGFCSChannel` objects, each representing a control axis (pitch, roll, yaw, etc.). Within a channel, components are chained: a signal travels from an input or command, through summers, gains, filters, and limiters, and finally to an output property driving an actuator or aerosurface.
+
+    `FGFCS` also covers the `<autopilot>` and `<system>` elements from the aircraft XML, which use the same component architecture.
+
+    **Key input properties (pilot commands):**
+
+    | Property | Description |
+    |---|---|
+    | `fcs/aileron-cmd-norm` | Normalized aileron command (−1 to 1) |
+    | `fcs/elevator-cmd-norm` | Normalized elevator command (−1 to 1) |
+    | `fcs/rudder-cmd-norm` | Normalized rudder command (−1 to 1) |
+    | `fcs/throttle-cmd-norm` | Normalized throttle command (0 to 1) |
+    | `fcs/flap-cmd-norm` | Normalized flap command |
+
+    **Key output properties (surface positions):**
+
+    | Property | Description |
+    |---|---|
+    | `fcs/left-aileron-pos-rad` | Left aileron position (rad) |
+    | `fcs/elevator-pos-rad` | Elevator position (rad) |
+    | `fcs/rudder-pos-norm` | Normalized rudder position |
+    | `fcs/flap-pos-deg` | Flap position (deg) |
+  </Accordion>
+
+  <Accordion title="FGPropulsion — engines and thrusters">
+    **Header:** `src/models/FGPropulsion.h`
+
+    `FGPropulsion` manages a collection of engine/thruster pairs. Each engine (piston, turbine, turboprop, rocket, or electric) and its associated thruster (propeller, nozzle, or direct) are modeled independently and indexed by position in the `<propulsion>` section of the aircraft XML.
+
+    The model sums thrust forces and gyroscopic moments from all engines and makes them available to `FGAircraft`.
+
+    **Key properties (per engine, zero-indexed):**
+
+    | Property | Description |
+    |---|---|
+    | `propulsion/engine[0]/thrust-lbs` | Engine 0 thrust (lbs) |
+    | `propulsion/engine[0]/fuel-flow-rate-gph` | Fuel flow (gallons/hr) |
+    | `propulsion/engine[0]/power-hp` | Shaft power (hp) |
+    | `propulsion/engine[0]/propeller-rpm` | Propeller RPM |
+    | `propulsion/magneto_cmd` | Magneto switch command |
+    | `propulsion/starter_cmd` | Starter command |
+  </Accordion>
+
+  <Accordion title="FGAtmosphere — atmospheric properties">
+    **Header:** `src/models/FGAtmosphere.h`
+
+    `FGAtmosphere` is an abstract base class for atmosphere models. It provides temperature, pressure, density, and speed of sound at the current altitude. Concrete implementations (such as the standard atmosphere model) derive from it.
+
+    You can perturb the atmosphere with a temperature delta via `atmosphere/delta-T`.
+
+    **Key properties:**
+
+    | Property | Description |
+    |---|---|
+    | `atmosphere/T-R` | Temperature (Rankine) |
+    | `atmosphere/P-psf` | Pressure (lbs/ft²) |
+    | `atmosphere/rho-slugs_ft3` | Density (slugs/ft³) |
+    | `atmosphere/a-fps` | Speed of sound (ft/s) |
+    | `atmosphere/delta-T` | Temperature perturbation (Rankine) |
+  </Accordion>
+
+  <Accordion title="FGWinds — wind and turbulence">
+    **Header:** `src/models/FGWinds.h`
+
+    `FGWinds` provides steady wind velocity, turbulence, and discrete gust models. It supports cosine-shaped gusts controllable through properties at runtime, making it straightforward to inject wind disturbances from a script.
+
+    **Key properties:**
+
+    | Property | Description |
+    |---|---|
+    | `atmosphere/wind-north-fps` | Northward wind component (ft/s) |
+    | `atmosphere/wind-east-fps` | Eastward wind component (ft/s) |
+    | `atmosphere/wind-down-fps` | Downward wind component (ft/s) |
+    | `atmosphere/cosine-gust/start` | Trigger a cosine gust (write 1) |
+    | `atmosphere/cosine-gust/magnitude-ft_sec` | Gust magnitude (ft/s) |
+  </Accordion>
+
+  <Accordion title="FGMassBalance — mass, CG, and inertia">
+    **Header:** `src/models/FGMassBalance.h`
+
+    `FGMassBalance` tracks the total vehicle mass, center-of-gravity (CG) position, and the inertia tensor. It maintains a list of point masses (crew, fuel, payload, stores) that can change during flight. Each frame it sums all contributions and updates the CG.
+
+    The inertia tensor is specified in the structural frame (x positive aft, y positive out the right wing, z upward). Cross-product sign convention is controlled by the `negated_crossproduct_inertia` attribute.
+
+    **Key properties:**
+
+    | Property | Description |
+    |---|---|
+    | `inertia/weight-lbs` | Total vehicle weight (lbs) |
+    | `inertia/mass-slugs` | Total vehicle mass (slugs) |
+    | `inertia/cg-x-in` | CG x-position in structural frame (in) |
+    | `inertia/ixx-slugs_ft2` | Moment of inertia Ixx |
+  </Accordion>
+
+  <Accordion title="FGGroundReactions — landing gear and contact">
+    **Header:** `src/models/FGGroundReactions.h`
+
+    `FGGroundReactions` manages a list of `FGLGear` instances, each representing a landing gear leg or structural contact point. It sums the contact forces and moments from all gear legs and delivers them to `FGPropagate`. Ground contact is computed using a spring-damper model with static and dynamic friction coefficients.
+
+    Gear state is parsed from the `<ground_reactions>` section of the aircraft XML.
+
+    **Key properties:**
+
+    | Property | Description |
+    |---|---|
+    | `gear/gear-cmd-norm` | Gear deploy command (0 = up, 1 = down) |
+    | `gear/gear-pos-norm` | Gear position (0 = up, 1 = down) |
+    | `contact/unit[0]/compression-ft` | Gear 0 compression (ft) |
+    | `contact/unit[0]/WOW` | Weight-on-wheels flag |
+  </Accordion>
+
+  <Accordion title="FGInertial — Earth gravity model">
+    **Header:** `src/models/FGInertial.h`
+
+    `FGInertial` provides the gravitational acceleration vector and related Earth constants. JSBSim supports two gravity models selectable at runtime via `simulation/gravity-model`:
+
+    - `0` — standard spherical gravity
+    - `1` — WGS84 gravity accounting for Earth's oblateness (default)
+
+    Gravitational torque on extended bodies (relevant for low-orbit spacecraft) can be enabled via `simulation/gravitational-torque`.
+  </Accordion>
+
+  <Accordion title="FGAccelerations — force and moment summation">
+    **Header:** `src/models/FGAccelerations.h`
+
+    `FGAccelerations` collects all forces and moments produced by the other models — aerodynamics, propulsion, ground reactions, external reactions, and buoyancy — and applies Newton's second law to compute translational and angular accelerations. It avoids unnecessary frame rotations by computing translational accelerations in the ECI frame and angular accelerations in the body frame, matching the frames used by `FGPropagate`.
+
+    Ground friction constraints are also resolved here using Lagrange multipliers.
+
+    **Key output properties:**
+
+    | Property | Description |
+    |---|---|
+    | `accelerations/udot-fps2` | Body x acceleration (ft/s²) |
+    | `accelerations/vdot-fps2` | Body y acceleration (ft/s²) |
+    | `accelerations/wdot-fps2` | Body z acceleration (ft/s²) |
+    | `accelerations/pdot-rad_sec2` | Roll acceleration (rad/s²) |
+    | `accelerations/qdot-rad_sec2` | Pitch acceleration (rad/s²) |
+    | `accelerations/rdot-rad_sec2` | Yaw acceleration (rad/s²) |
+  </Accordion>
+</AccordionGroup>
+
+## Model interaction diagram
+
+The data flow between models follows the execution order. Each model reads properties written by earlier models in the same frame:
+
+```
+FGPropagate  →  FGInertial  →  FGAtmosphere  →  FGWinds
+     ↓               ↓               ↓
+  position       gravity         T, P, rho        wind
+     ↓
+  FGFCS  →  FGMassBalance  →  FGAuxiliary  →  FGPropulsion
+(control)    (mass, CG, I)   (Mach, qbar,α)   (thrust)
+                                    ↓
+                           FGAerodynamics  →  FGGroundReactions
+                           (aero forces)      (gear forces)
+                                    ↓
+                              FGAircraft
+                           (total F and M)
+                                    ↓
+                           FGAccelerations
+                           (a = F/m, α = M/I)
+                                    ↓
+                    → next FGPropagate (integrated)
+```
+
+<Info>
+  `FGAuxiliary` computes derived aerodynamic quantities such as Mach number, dynamic pressure, angle of attack (`alpha`), and sideslip angle (`beta`) from the current atmosphere and velocity state. Many aerodynamic lookup tables depend on these values.
+</Info>

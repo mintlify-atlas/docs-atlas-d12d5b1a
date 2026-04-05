@@ -1,0 +1,309 @@
+---
+title: "Python integration"
+description: "Use JSBSim from Python to build flight simulations, run trim analyses, and interact with the property system through the FGFDMExec API."
+---
+
+The JSBSim Python package wraps the C++ library with a Cython extension module. You get direct access to `FGFDMExec` and all subsystem objects with the same performance characteristics as the native library.
+
+## Installation
+
+<Tabs>
+  <Tab title="pip">
+    ```bash
+    pip install jsbsim
+    ```
+  </Tab>
+  <Tab title="conda">
+    ```bash
+    conda install jsbsim
+    ```
+  </Tab>
+</Tabs>
+
+**Supported Python versions:** 3.10, 3.11, 3.12, 3.13, 3.14
+
+## Initializing FGFDMExec
+
+`FGFDMExec` is the top-level executive that owns all subsystem models. You create one instance per simulation.
+
+<Tabs>
+  <Tab title="Default root dir">
+    Pass `None` as the root directory and JSBSim resolves the bundled aircraft data from the installed package:
+
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec(None)
+    print(fdm.get_root_dir())  # path inside site-packages
+    ```
+
+    `get_default_root_dir()` returns the same path without creating an `FGFDMExec`:
+
+    ```python
+    root = jsbsim.get_default_root_dir()
+    print(root)
+    ```
+  </Tab>
+  <Tab title="Custom root dir">
+    Point JSBSim at your own directory tree that contains `aircraft/`, `engine/`, and `systems/` subdirectories:
+
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec("/path/to/my/jsbsim/data")
+    ```
+
+    The constructor sets `aircraft`, `engine`, and `systems` paths relative to that root automatically. You can override any of them afterwards:
+
+    ```python
+    fdm.set_aircraft_path("aircraft")
+    fdm.set_engine_path("engine")
+    fdm.set_systems_path("systems")
+    ```
+  </Tab>
+</Tabs>
+
+## Loading a model
+
+### load_model()
+
+Use `load_model()` when you want to set initial conditions programmatically and drive the simulation loop yourself:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_model("c172p")
+
+# Set initial conditions
+fdm["ic/h-sl-ft"] = 1000.0
+fdm["ic/vt-kts"] = 100.0
+fdm["ic/psi-true-deg"] = 0.0
+
+fdm.run_ic()
+
+# Simulation loop
+while fdm.run():
+    altitude = fdm["position/h-sl-ft"]
+    airspeed = fdm["velocities/vt-fps"]
+```
+
+### load_script()
+
+Use `load_script()` to run a pre-authored XML script that encodes initial conditions, events, and termination criteria:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_script("scripts/c1721.xml")
+fdm.run_ic()
+
+while fdm.run():
+    pass
+```
+
+<Note>
+`load_script()` resolves the script path relative to the root directory. The script file itself specifies which aircraft model and initialization file to load.
+</Note>
+
+## Simulation loop
+
+The standard pattern for a manual simulation loop is:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_model("c172p")
+
+fdm["ic/h-sl-ft"] = 1000.0
+fdm["ic/vt-kts"] = 100.0
+
+# Apply initial conditions and execute one zero-dt frame
+fdm.run_ic()
+
+# Step the simulation
+result = True
+while result:
+    result = fdm.run()
+
+print(f"Simulation ended at t={fdm.get_sim_time():.2f} s")
+```
+
+`run_ic()` applies the initial condition object and runs all models once with `dt = 0`. `run()` advances the simulation by one time step and returns `False` when the simulation should terminate.
+
+## Reading and writing properties
+
+Every variable in JSBSim — aircraft state, controls, atmospheric data — is accessible through the property system.
+
+### Dictionary-style access
+
+`FGFDMExec` supports `[]` subscript access for convenience:
+
+```python
+# Read a property
+altitude = fdm["position/h-sl-ft"]
+airspeed = fdm["velocities/vt-fps"]
+
+# Write a property
+fdm["fcs/aileron-cmd-norm"] = 0.5
+fdm["fcs/throttle-cmd-norm[0]"] = 0.8
+```
+
+### Method-style access
+
+```python
+# Read
+alt = fdm.get_property_value("position/h-sl-ft")
+
+# Write
+fdm.set_property_value("fcs/elevator-cmd-norm", -0.1)
+```
+
+### Listing all properties
+
+`get_property_catalog()` returns a list of every property name available for the loaded aircraft:
+
+```python
+catalog = fdm.get_property_catalog()
+for prop in catalog[:20]:
+    print(prop)
+```
+
+You can also filter with `query_property_catalog()`:
+
+```python
+# Find all velocity-related properties
+velocity_props = fdm.query_property_catalog("velocities")
+print(velocity_props)
+```
+
+## Complete example
+
+The following script loads a Cessna 172p, trims it at cruise, then runs a 60-second simulation collecting altitude and airspeed:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_model("c172p")
+
+# Initial conditions: 3000 ft MSL, 100 kt, heading north
+fdm["ic/h-sl-ft"] = 3000.0
+fdm["ic/vt-kts"] = 100.0
+fdm["ic/psi-true-deg"] = 0.0
+fdm["ic/lat-geod-deg"] = 47.0
+fdm["ic/long-gc-deg"] = -122.0
+
+# Start all engines
+fdm.run_ic()
+fdm.get_propulsion().init_running(-1)
+
+end_time = 60.0
+times = []
+altitudes = []
+
+while fdm.get_sim_time() < end_time and fdm.run():
+    times.append(fdm.get_sim_time())
+    altitudes.append(fdm["position/h-sl-ft"])
+
+print(f"Final altitude: {altitudes[-1]:.1f} ft")
+```
+
+## Python example notebooks
+
+The `examples/python/` directory in the JSBSim repository contains Jupyter notebooks that demonstrate common analysis workflows.
+
+<CardGroup cols={2}>
+  <Card title="AoA vs CAS" icon="chart-line">
+    Plots angle of attack against calibrated airspeed across a range of flight conditions to characterize lift curve behaviour.
+  </Card>
+  <Card title="Trim Envelope" icon="plane">
+    Computes trim points over a range of airspeeds to map the trimmed flight envelope for an aircraft.
+  </Card>
+  <Card title="Rudder Kick" icon="rotate">
+    Applies a rudder step input and records lateral dynamics — yaw rate, sideslip angle, and roll — to assess Dutch roll characteristics.
+  </Card>
+  <Card title="Thrust Vectoring Analysis" icon="rocket">
+    Evaluates the effect of thrust vectoring on pitch and yaw authority by sweeping nozzle deflection angles.
+  </Card>
+</CardGroup>
+
+Run a notebook with:
+
+```bash
+pip install notebook matplotlib numpy
+jupyter notebook "examples/python/AoA vs CAS.ipynb"
+```
+
+## Custom logging with FGLogger
+
+By default JSBSim prints messages to stdout through `DefaultLogger`. You can replace this with any Python object that subclasses `FGLogger`:
+
+```python
+import jsbsim
+
+class MyLogger(jsbsim.FGLogger):
+    def __init__(self):
+        self.log_level = jsbsim.LogLevel.WARN
+
+    def message(self, message: str) -> None:
+        # Route to your own logging system
+        import logging
+        logging.getLogger("jsbsim").info(message.rstrip())
+
+    def file_location(self, filename: str, line: int) -> None:
+        pass
+
+    def format(self, fmt: jsbsim.LogFormat) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+jsbsim.set_logger(MyLogger())
+
+fdm = jsbsim.FGFDMExec(None)
+fdm.load_model("c172p")
+```
+
+`set_logger()` replaces the global logger for all subsequent JSBSim output. The `LogLevel` enum controls verbosity:
+
+| Level | Description |
+|-------|-------------|
+| `BULK` | Frequent low-level messages |
+| `DEBUG` | Less frequent debug messages |
+| `INFO` | Informatory messages |
+| `WARN` | Possible impending problems |
+| `ERROR` | Recoverable problems |
+| `FATAL` | Fatal problems — raises an exception |
+| `STDOUT` | Unconditionally displayed output |
+
+## Error handling
+
+JSBSim raises Python exceptions for error conditions. All exceptions inherit from `BaseError`.
+
+```python
+import jsbsim
+
+try:
+    fdm = jsbsim.FGFDMExec(None)
+    fdm.load_model("c172p")
+    fdm["ic/h-sl-ft"] = 3000.0
+    fdm["ic/vt-kts"] = 100.0
+    fdm.run_ic()
+    fdm.do_trim(1)  # longitudinal trim
+except jsbsim.TrimFailureError as e:
+    print(f"Trim failed: {e}")
+except jsbsim.GeographicError as e:
+    print(f"Geographic computation error: {e}")
+except jsbsim.BaseError as e:
+    print(f"JSBSim error: {e}")
+```
+
+| Exception | When raised |
+|-----------|-------------|
+| `BaseError` | Base class for all JSBSim exceptions |
+| `TrimFailureError` | `do_trim()` could not find a trimmed solution |
+| `GeographicError` | A geographic computation (e.g. WGS84 conversion) failed |

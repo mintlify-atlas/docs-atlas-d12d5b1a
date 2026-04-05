@@ -1,0 +1,239 @@
+---
+title: "Data output"
+description: "Configure JSBSim to log simulation data to CSV files, sockets, the FlightGear protocol, or the terminal. Select subsystem categories or individual properties to record."
+---
+
+JSBSim's output system is managed by `FGOutput`, which holds a list of output instances. Each instance is configured by an `<output>` element in the aircraft configuration file or on the command line, and writes data independently at its own rate.
+
+## Output types
+
+| `type` | Destination | Notes |
+|---|---|---|
+| `CSV` | Comma-separated text file | Most common for post-processing; filename sets the output file. Use `COUT` or `cout` to write to stdout. |
+| `TABULAR` | Columnar text file | Human-readable fixed-width columns |
+| `FLIGHTGEAR` | UDP/TCP socket to FlightGear | Sends the native FlightGear binary FDM packet; used for real-time visualisation |
+| `SOCKET` | Generic network socket | Sends CSV data over a socket |
+| `NONE` | No output | Disables output without removing the element |
+
+## Declaring an output element
+
+Place `<output>` inside `<fdm_config>` at the same level as `<metrics>`, `<propulsion>`, etc.
+
+```xml
+<output name="B737_datalog.csv" type="CSV" rate="20">
+  <velocities>     ON </velocities>
+  <position>       ON </position>
+  <forces>         ON </forces>
+  <moments>        ON </moments>
+  <propulsion>     ON </propulsion>
+  <aerosurfaces>   ON </aerosurfaces>
+  <fcs>            ON </fcs>
+  <atmosphere>     ON </atmosphere>
+  <massprops>      ON </massprops>
+  <ground_reactions> ON </ground_reactions>
+  <rates>          ON </rates>
+  <simulation>     ON </simulation>
+  <coefficients>   ON </coefficients>
+</output>
+```
+
+The `rate` attribute sets the output frequency in Hz. Time is always included regardless of which subsystems you enable.
+
+## Subsystem flags
+
+Turn individual subsystem groups on or off with `ON` / `OFF`:
+
+| Flag | Properties logged |
+|---|---|
+| `simulation` | Simulation time, frame count, dt |
+| `atmosphere` | Temperature, pressure, density, speed of sound, wind |
+| `massprops` | Total weight, CG position, inertia tensor |
+| `aerosurfaces` | Control surface position (elevator, aileron, rudder, flaps, spoilers) |
+| `rates` | Angular rates p, q, r |
+| `velocities` | Body-axis velocities u, v, w; calibrated, equivalent, and true airspeed; Mach |
+| `forces` | Aerodynamic, propulsive, and gravity forces in body and wind axes |
+| `moments` | Aerodynamic, propulsive, and total moments about the CG |
+| `position` | Latitude, longitude, altitude (geodetic and AGL), Euler angles |
+| `coefficients` | Aerodynamic coefficient values (CL, CD, CM, CY, Cl, Cn) |
+| `ground_reactions` | Gear compression, contact forces, wheel RPM |
+| `fcs` | All FCS property values |
+| `propulsion` | Thrust, RPM, fuel flow, tank contents for each engine and tank |
+
+## Logging individual properties
+
+In addition to subsystem flags, you can log arbitrary properties by name:
+
+```xml
+<output name="custom.csv" type="CSV" rate="10">
+  <velocities> ON </velocities>
+  <property> ap/altitude_setpoint      </property>
+  <property> ap/altitude_hold          </property>
+  <property> guidance/specified-heading-rad </property>
+</output>
+```
+
+Each `<property>` element appends that property as an additional column in the output file.
+
+## FlightGear socket output
+
+To drive a FlightGear instance for real-time visual output, use the `FLIGHTGEAR` type:
+
+```xml
+<output name="localhost" type="FLIGHTGEAR" port="5500" protocol="tcp" rate="60"/>
+```
+
+| Attribute | Description |
+|---|---|
+| `name` | Hostname or IP address of the FlightGear machine |
+| `port` | UDP or TCP port FlightGear is listening on |
+| `protocol` | `tcp` or `udp` |
+| `rate` | Packet transmission rate in Hz |
+
+## Command-line flags
+
+<Tabs>
+  <Tab title="Output log file">
+```bash
+# Override the output filename at launch
+JSBSim --script=scripts/c1723.xml --outputlogfile=my_output.csv
+```
+  </Tab>
+  <Tab title="Log rate from script">
+```xml
+<!-- Change the log rate mid-simulation from within an event -->
+<event name="Increase log rate">
+  <condition> velocities/vc-kts >= 51 </condition>
+  <set name="simulation/output/log_rate_hz" value="10"/>
+</event>
+```
+  </Tab>
+</Tabs>
+
+## Reading CSV output in Python
+
+After a simulation run, read the CSV output file with pandas or the standard `csv` module:
+
+```python
+import jsbsim
+import csv
+
+fdm = jsbsim.FGFDMExec('/path/to/jsbsim')
+fdm.load_script('scripts/c1723.xml')
+fdm.run_ic()
+
+while fdm.run():
+    pass
+
+# Read the CSV file written by the <output> element
+with open('JSBout172B.csv', newline='') as f:
+    reader = csv.DictReader(f)
+    rows = list(reader)
+
+# Print final row values
+last = rows[-1]
+print('Time:',     last['Time'])
+print('Altitude:', last['position/h-agl-ft'], 'ft')
+print('IAS:',      last['velocities/vc-kts'], 'kts')
+```
+
+If you have pandas installed, this is more convenient for larger logs:
+
+```python
+import pandas as pd
+
+df = pd.read_csv('JSBout172B.csv')
+df.columns = df.columns.str.strip()   # remove any leading/trailing spaces
+
+print(df[['Time', 'position/h-agl-ft', 'velocities/vc-kts']].tail(10))
+```
+
+## Reading properties directly during simulation
+
+You do not need to write a file to capture data. Read property values directly from the `FGFDMExec` object at any simulation step:
+
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec('/path/to/jsbsim')
+fdm.load_model('c172p')
+fdm['ic/h-agl-ft'] = 1000.0
+fdm['ic/vc-kts']   = 100.0
+fdm.run_ic()
+
+log = []
+for _ in range(1200):   # 10 s at 120 Hz
+    fdm.run()
+    log.append({
+        'time':     fdm['simulation/sim-time-sec'],
+        'altitude': fdm['position/h-agl-ft'],
+        'ias_kts':  fdm['velocities/vc-kts'],
+        'alpha_deg': fdm['aero/alpha-deg'],
+        'thrust_lbs': fdm['propulsion/engine/thrust-lbs'],
+    })
+
+import json
+with open('sim_log.json', 'w') as f:
+    json.dump(log, f, indent=2)
+```
+
+## Commonly logged properties
+
+<AccordionGroup>
+
+<Accordion title="Position and attitude">
+| Property | Description |
+|---|---|
+| `position/lat-geod-deg` | Geodetic latitude (degrees) |
+| `position/long-deg` | Longitude (degrees) |
+| `position/h-agl-ft` | Altitude above ground (ft) |
+| `position/h-sl-ft` | Altitude above sea level (ft) |
+| `position/geod-alt-ft` | Geodetic altitude (ft) |
+| `attitude/phi-rad` | Roll angle (radians) |
+| `attitude/theta-rad` | Pitch angle (radians) |
+| `attitude/psi-rad` | Heading (radians true) |
+</Accordion>
+
+<Accordion title="Velocities">
+| Property | Description |
+|---|---|
+| `velocities/vc-kts` | Calibrated airspeed (knots) |
+| `velocities/vtrue-kts` | True airspeed (knots) |
+| `velocities/ve-kts` | Equivalent airspeed (knots) |
+| `velocities/mach` | Mach number |
+| `velocities/vt-fps` | Total velocity (ft/s) |
+| `velocities/u-fps` | Body-axis X velocity (ft/s) |
+| `velocities/v-fps` | Body-axis Y velocity (ft/s) |
+| `velocities/w-fps` | Body-axis Z velocity (ft/s) |
+| `velocities/p-rad_sec` | Roll rate (rad/s) |
+| `velocities/q-rad_sec` | Pitch rate (rad/s) |
+| `velocities/r-rad_sec` | Yaw rate (rad/s) |
+| `velocities/h-dot-fps` | Climb rate (ft/s) |
+</Accordion>
+
+<Accordion title="Forces and moments">
+| Property | Description |
+|---|---|
+| `forces/fwx-lbs` | Wind-axis drag force (lbs) |
+| `forces/fwz-lbs` | Wind-axis lift force (lbs) |
+| `forces/fbx-lbs` | Body-axis X force (lbs) |
+| `moments/l-aero-lbsft` | Aerodynamic rolling moment |
+| `moments/m-aero-lbsft` | Aerodynamic pitching moment |
+| `moments/n-aero-lbsft` | Aerodynamic yawing moment |
+| `accelerations/Nz` | Normal load factor |
+</Accordion>
+
+<Accordion title="Propulsion">
+| Property | Description |
+|---|---|
+| `propulsion/engine/thrust-lbs` | Engine thrust (lbs) |
+| `propulsion/engine/engine-rpm` | Engine / propeller RPM |
+| `propulsion/engine/fuel-flow-rate-pps` | Fuel flow (lb/s) |
+| `propulsion/tank/contents-lbs` | Fuel remaining in tank (lbs) |
+| `propulsion/total-fuel-lbs` | Total fuel across all tanks |
+</Accordion>
+
+</AccordionGroup>
+
+<Note>
+The default output filename is constructed from the aircraft name and a sequence number (e.g., `JSBout172B.csv`). Use `--outputlogfile` on the command line or call `fdm.set_output_filename(0, 'myfile.csv')` from Python to override it.
+</Note>

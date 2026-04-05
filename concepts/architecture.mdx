@@ -1,0 +1,142 @@
+---
+title: "Architecture"
+description: "How FGFDMExec orchestrates the JSBSim simulation loop, the ordered execution of physics models, and the difference between standalone and embedded modes."
+---
+
+## Overview
+
+JSBSim is built around a single executive class, `FGFDMExec`, that owns every physics model and controls the order in which they run. All other classes — atmosphere, aerodynamics, flight controls, propulsion — are instantiated, initialized, and driven by `FGFDMExec`. Whether you embed JSBSim inside a flight simulator or run it as a standalone batch tool, the same executive class is at the center.
+
+## FGFDMExec: the simulation executive
+
+`FGFDMExec` is defined in `src/FGFDMExec.h`. It holds shared pointers to every model, manages the property tree via `FGPropertyManager`, and exposes the three methods that drive the simulation lifecycle:
+
+| Method | Purpose |
+|---|---|
+| `LoadModel()` | Parses the aircraft XML and constructs all models |
+| `RunIC()` | Applies initial conditions without advancing time (dt = 0) |
+| `Run()` | Advances the simulation by one time step |
+
+Every simulation session follows this sequence: load a model, apply initial conditions once, then call `Run()` repeatedly until the simulation ends.
+
+## Model execution order
+
+Inside each call to `Run()`, `FGFDMExec` iterates over its model list in the order defined by the `eModels` enum. This order is not arbitrary — dependencies between models determine it. For example, `FGFCS` (the flight control system) must run before `FGMassBalance` because the FCS can request mass geometry changes via `inertia/pointmass-*` properties, and `FGMassBalance` must run before `FGAerodynamics`, `FGPropulsion`, `FGGroundReactions`, `FGExternalReactions`, and `FGBuoyantForces` so that all moment calculations use an up-to-date center-of-gravity position.
+
+<Steps>
+  <Step title="FGPropagate (ePropagate)">
+    Integrates the equations of motion. Updates vehicle position, velocity, and attitude based on accelerations from the previous frame.
+  </Step>
+  <Step title="FGInput (eInput)">
+    Reads external control inputs from network sockets or other interfaces when JSBSim is driven by an external host.
+  </Step>
+  <Step title="FGInertial (eInertial)">
+    Provides Earth gravity and other inertial reference values used by subsequent models.
+  </Step>
+  <Step title="FGAtmosphere (eAtmosphere)">
+    Computes atmospheric properties — temperature, pressure, density, and speed of sound — at the current altitude.
+  </Step>
+  <Step title="FGWinds (eWinds)">
+    Resolves wind velocity, turbulence, and gusts that affect the aerodynamic environment.
+  </Step>
+  <Step title="FGFCS (eSystems)">
+    Runs the flight control system channels and any autopilot or system logic. Can modify point-mass geometry before mass balance is computed.
+  </Step>
+  <Step title="FGMassBalance (eMassBalance)">
+    Updates total mass, center-of-gravity position, and the inertia tensor from fuel burn, payload changes, and point masses.
+  </Step>
+  <Step title="FGAuxiliary (eAuxiliary)">
+    Computes derived quantities — Mach number, dynamic pressure, alpha, beta, and other values needed by aerodynamics and propulsion.
+  </Step>
+  <Step title="FGPropulsion (ePropulsion)">
+    Updates engine and thruster models, producing thrust forces and moments with a current CG position.
+  </Step>
+  <Step title="FGAerodynamics (eAerodynamics)">
+    Evaluates aerodynamic force and moment coefficients from lookup tables, using the current mass and CG.
+  </Step>
+  <Step title="FGGroundReactions (eGroundReactions)">
+    Computes landing-gear contact forces and moments based on the current CG.
+  </Step>
+  <Step title="FGExternalReactions (eExternalReactions)">
+    Sums any user-defined external forces applied to the vehicle.
+  </Step>
+  <Step title="FGBuoyantForces (eBuoyantForces)">
+    Calculates buoyancy for airships and balloon-type vehicles, using the current CG.
+  </Step>
+  <Step title="FGAircraft (eAircraft)">
+    Sums all forces and moments from the active models into the total body-frame force and moment vectors.
+  </Step>
+  <Step title="FGAccelerations (eAccelerations)">
+    Applies Newton's second law to convert the summed forces and moments into translational and angular accelerations for the next `FGPropagate` step.
+  </Step>
+  <Step title="FGOutput (eOutput)">
+    Writes simulation state to configured output channels — CSV files, socket streams, or other loggers.
+  </Step>
+</Steps>
+
+## Standalone vs. embedded mode
+
+JSBSim can run in two distinct configurations.
+
+<Tabs>
+  <Tab title="Standalone">
+    In standalone mode, JSBSim loads a flight script that specifies the aircraft, initial conditions, and a sequence of timed events. No external simulator host is needed. Input and output are handled internally by `FGScript` and `FGOutput`.
+
+    ```cpp
+    FGFDMExec* FDMExec = new JSBSim::FGFDMExec();
+    FDMExec->LoadScript("scripts/c172_cruise_8K.xml");
+    bool result = FDMExec->Run();
+    while (result) {
+        result = FDMExec->Run();
+    }
+    ```
+
+    This mode is useful for batch performance analysis — range, climb rate, takeoff distance — and for regression testing before committing code changes.
+  </Tab>
+  <Tab title="Embedded (integrated)">
+    When embedded inside a host simulator such as FlightGear, the host creates an `FGFDMExec` instance, loads an aircraft model, and exchanges data with JSBSim every frame using `copy_to_JSBSim()` and `copy_from_JSBSim()` calls around `Run()`.
+
+    ```cpp
+    // Host simulator integration pattern
+    fdmex = new FGFDMExec(/* property manager */);
+    fdmex->LoadModel("aircraft", "engine", "systems", "c172p");
+
+    // Initialization
+    copy_to_JSBSim();   // write control inputs to property tree
+    fdmex->RunIC();     // apply initial conditions without advancing time
+    copy_from_JSBSim(); // read state back to the host
+
+    // Cyclic loop
+    while (running) {
+        copy_to_JSBSim();   // pilot inputs → property tree
+        fdmex->Run();       // advance simulation by one dt
+        copy_from_JSBSim(); // updated state → host rendering/instruments
+    }
+    ```
+
+    The host controls the simulation clock. JSBSim provides forces, moments, and state; the host provides control surface commands and reads back position, attitude, and velocity for rendering.
+  </Tab>
+  <Tab title="Python">
+    The Python binding exposes the same executive through `jsbsim.FGFDMExec`. You construct it, load a model, and call `run()` in a loop — exactly the same lifecycle as the C++ standalone mode.
+
+    ```python
+    import jsbsim
+
+    fdm = jsbsim.FGFDMExec("path/to/jsbsim/root")
+    fdm.load_model("c172p")
+    fdm.run_ic()
+
+    while fdm.run():
+        altitude = fdm["position/h-sl-ft"]
+        airspeed = fdm["velocities/vt-fps"]
+    ```
+  </Tab>
+</Tabs>
+
+## Child FDM instances
+
+`FGFDMExec` supports multiple child FDM instances — for example, a jettisoned store or a towed glider. Each child has its own `FGFDMExec` and state vector. The parent executive calls `Run()` on each child and can synchronize state with `AssignState()`. Child instances are defined in the aircraft XML using `<slave>` elements and are tracked in `ChildFDMList` inside the executive.
+
+<Note>
+  The simulation time step `dt` is set by calling `Setdt()` or by specifying it in a script's `<run dt="...">` attribute. All models advance by the same `dt` on every `Run()` call.
+</Note>

@@ -1,0 +1,391 @@
+---
+title: "FGFDMExec"
+description: "The central simulation executive class that instantiates, initializes, and runs all JSBSim subsystem models."
+---
+
+`FGFDMExec` is the top-level class for a JSBSim simulation. Every model — atmosphere, propulsion, aerodynamics, flight control, and so on — is owned and orchestrated by this single executive object. You create one instance, load an aircraft model or script, and then call `Run()` in a loop.
+
+<Note>
+  When used from Python the class is available as `jsbsim.FGFDMExec`. Method names are snake_case equivalents of the C++ names (e.g. `LoadModel` → `load_model`). See the [Python module reference](/reference/python-module) for the full Python API.
+</Note>
+
+## Constructor
+
+```cpp
+FGFDMExec(FGPropertyManager* root = nullptr,
+          std::shared_ptr<unsigned int> fdmctr = nullptr);
+```
+
+<ParamField path="root" type="FGPropertyManager*">
+  Optional pointer to a pre-existing property manager root node. Pass `nullptr` (the default) to create a fresh property tree.
+</ParamField>
+
+<ParamField path="fdmctr" type="std::shared_ptr<unsigned int>">
+  Optional shared counter used to give child FDMs unique IDs. Pass `nullptr` unless you are building a multi-FDM setup.
+</ParamField>
+
+## Simulation loop
+
+### Run
+
+```cpp
+bool Run(void);
+```
+
+Executes one simulation step. All scheduled models are advanced by the current `dT`. Returns `true` while the simulation should continue, `false` when it has ended (e.g. a script has run to completion or `Terminate` has been set).
+
+### RunIC
+
+```cpp
+bool RunIC(void);
+```
+
+Initializes all models from the current `FGInitialCondition` object with `dt = 0` — no state integration occurs. Call this once after loading a model, and again after `ResetToInitialConditions`, before entering the main loop.
+
+**Typical integration loop:**
+
+```cpp
+FGFDMExec* fdmex = new FGFDMExec();
+fdmex->LoadModel("aircraft", "engine", "systems", "c172r");
+fdmex->RunIC();
+while (fdmex->Run()) {
+    // read/write properties here
+}
+```
+
+## Loading models and scripts
+
+### LoadModel (with explicit paths)
+
+```cpp
+bool LoadModel(const SGPath& AircraftPath,
+               const SGPath& EnginePath,
+               const SGPath& SystemsPath,
+               const std::string& model,
+               bool addModelToPath = true);
+```
+
+<ParamField path="AircraftPath" type="SGPath" required>
+  Path to the directory that contains aircraft subdirectories, e.g. `"aircraft"`.
+</ParamField>
+
+<ParamField path="EnginePath" type="SGPath" required>
+  Path to the directory containing engine configuration files, e.g. `"engine"`.
+</ParamField>
+
+<ParamField path="SystemsPath" type="SGPath" required>
+  Path to the directory containing systems configuration files, e.g. `"systems"`.
+</ParamField>
+
+<ParamField path="model" type="std::string" required>
+  The aircraft model name. JSBSim looks for `{AircraftPath}/{model}/{model}.xml` when `addModelToPath` is `true`.
+</ParamField>
+
+<ParamField path="addModelToPath" type="bool" default="true">
+  When `true`, appends the model name to `AircraftPath` automatically.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `true` if the model loaded successfully.
+</ResponseField>
+
+### LoadModel (uses pre-set paths)
+
+```cpp
+bool LoadModel(const std::string& model, bool addModelToPath = true);
+```
+
+Shorter form that uses whichever paths were set by `SetAircraftPath()`, `SetEnginePath()`, and `SetSystemsPath()` before the call.
+
+### LoadScript
+
+```cpp
+bool LoadScript(const SGPath& Script,
+                double deltaT = 0.0,
+                const SGPath& initfile = SGPath());
+```
+
+Loads a JSBSim script file. The script specifies the aircraft, initial conditions, and simulation events.
+
+<ParamField path="Script" type="SGPath" required>
+  Full path to the script XML file.
+</ParamField>
+
+<ParamField path="deltaT" type="double" default="0.0">
+  Integration step size in seconds. `0.0` means the value in the script file is used.
+</ParamField>
+
+<ParamField path="initfile" type="SGPath">
+  Overrides the initialization file specified inside the script. Leave empty to use the script's own IC file.
+</ParamField>
+
+**Standalone script execution example:**
+
+```cpp
+FGFDMExec* fdmex = new FGFDMExec();
+fdmex->LoadScript("scripts/c1722.xml");
+fdmex->RunIC();
+bool running = true;
+while (running) {
+    running = fdmex->Run();
+}
+```
+
+### LoadPlanet
+
+```cpp
+bool LoadPlanet(const SGPath& PlanetPath, bool useAircraftPath = true);
+```
+
+Loads planet-specific parameters (radius, gravity model, atmosphere characteristics) from an XML file.
+
+<ParamField path="PlanetPath" type="SGPath" required>
+  Path to the planet definition XML file.
+</ParamField>
+
+<ParamField path="useAircraftPath" type="bool" default="true">
+  When `true`, a relative path is resolved against the aircraft directory.
+</ParamField>
+
+## Path configuration
+
+The root directory is the base from which all relative paths are resolved.
+
+<AccordionGroup>
+  <Accordion title="SetRootDir / GetRootDir">
+
+```cpp
+void SetRootDir(const SGPath& rootDir);
+const SGPath& GetRootDir(void) const;
+```
+
+Sets or retrieves the base directory. Aircraft, engine, and systems paths are **not** updated automatically — call the individual setters after changing the root.
+
+  </Accordion>
+  <Accordion title="SetAircraftPath / GetAircraftPath">
+
+```cpp
+bool SetAircraftPath(const SGPath& path);
+const SGPath& GetAircraftPath(void);
+```
+
+Relative paths are resolved against `RootDir`.
+
+  </Accordion>
+  <Accordion title="SetEnginePath / GetEnginePath">
+
+```cpp
+bool SetEnginePath(const SGPath& path);
+const SGPath& GetEnginePath(void);
+```
+
+  </Accordion>
+  <Accordion title="SetSystemsPath / GetSystemsPath">
+
+```cpp
+bool SetSystemsPath(const SGPath& path);
+const SGPath& GetSystemsPath(void);
+```
+
+  </Accordion>
+  <Accordion title="SetOutputPath / GetOutputPath">
+
+```cpp
+bool SetOutputPath(const SGPath& path);
+const SGPath& GetOutputPath(void);
+```
+
+Directory where data-logging output files are written.
+
+  </Accordion>
+  <Accordion title="GetFullAircraftPath">
+
+```cpp
+const SGPath& GetFullAircraftPath(void);
+```
+
+Returns the fully resolved aircraft path including the model name subdirectory.
+
+  </Accordion>
+</AccordionGroup>
+
+## Time control
+
+```cpp
+double GetSimTime(void) const;   // cumulative simulation time, seconds
+double GetDeltaT(void) const;    // current integration step size, seconds
+void   Setdt(double delta_t);    // set the integration step size
+double Setsim_time(double cur_time); // set (override) the current simulation time
+double IncrTime(void);           // advance time by dT (if not holding)
+unsigned int GetFrame(void) const; // current frame count
+```
+
+### Hold / Resume
+
+```cpp
+void Hold(void);     // freeze sim time
+void Resume(void);   // unfreeze
+bool Holding(void);  // true while frozen
+
+void SuspendIntegration(void);   // set dT = 0 internally
+void ResumeIntegration(void);    // restore dT
+bool IntegrationSuspended(void) const;
+
+void EnableIncrementThenHold(int Timesteps); // run N steps then hold
+void CheckIncrementalHold(void);
+```
+
+### ResetToInitialConditions
+
+```cpp
+void ResetToInitialConditions(int mode);
+```
+
+Resets all models to the initial-condition state.
+
+| `mode` bit | Effect |
+|---|---|
+| `0x1` (`START_NEW_OUTPUT`) | Output objects open a new log file |
+| `0x2` (`DONT_EXECUTE_RUN_IC`) | Skips the internal `RunIC()` call so the caller can set additional state first |
+
+## Trimming and linearization
+
+### DoTrim
+
+```cpp
+void DoTrim(int mode);
+```
+
+Executes the trimmer in the selected mode. The `mode` value corresponds to the `TrimMode` enumeration:
+
+| Value | Constant | Description |
+|---|---|---|
+| 0 | `tLongitudinal` | Longitudinal trim |
+| 1 | `tFull` | Full 6-DOF trim |
+| 2 | `tGround` | Ground trim |
+| 3 | `tPullup` | Pull-up trim |
+| 4 | `tCustom` | Custom trim |
+| 5 | `tTurn` | Coordinated turn trim |
+
+<Warning>
+  Trim before calling `DoLinearization`. An inaccurate trim produces a meaningless state-space model.
+</Warning>
+
+### DoLinearization
+
+```cpp
+void DoLinearization(int);
+```
+
+Computes a linear state-space model around the current trimmed operating point.
+
+## Property system
+
+### GetPropertyValue / SetPropertyValue
+
+```cpp
+double GetPropertyValue(const std::string& property);
+void   SetPropertyValue(const std::string& property, double value);
+```
+
+Read or write any property in the JSBSim property tree by its string path, for example `"velocities/vt-fps"` or `"fcs/elevator-cmd-norm"`.
+
+```cpp
+// Read airspeed
+double vt = fdmex->GetPropertyValue("velocities/vt-fps");
+
+// Command a control surface
+fdmex->SetPropertyValue("fcs/elevator-cmd-norm", 0.1);
+```
+
+### GetPropertyManager
+
+```cpp
+std::shared_ptr<FGPropertyManager> GetPropertyManager(void) const;
+```
+
+Returns the underlying `FGPropertyManager`. Use this to traverse the property tree directly or to create `FGPropertyNode` handles for repeated access.
+
+### Property catalog
+
+```cpp
+std::string QueryPropertyCatalog(const std::string& check,
+                                 const std::string& end_of_line = "\n");
+void        PrintPropertyCatalog(void);
+std::vector<std::string>& GetPropertyCatalog(void);
+```
+
+`QueryPropertyCatalog` returns a newline-delimited string of all properties whose names contain `check`. Pass an empty string to enumerate all properties. `GetPropertyCatalog` returns the underlying vector directly.
+
+## Subsystem accessors
+
+Each method returns a `std::shared_ptr` to the indicated subsystem model.
+
+```cpp
+std::shared_ptr<FGAtmosphere>        GetAtmosphere(void)        const;
+std::shared_ptr<FGWinds>             GetWinds(void)             const;
+std::shared_ptr<FGAccelerations>     GetAccelerations(void)     const;
+std::shared_ptr<FGFCS>               GetFCS(void)               const;
+std::shared_ptr<FGPropulsion>        GetPropulsion(void)        const;
+std::shared_ptr<FGMassBalance>       GetMassBalance(void)       const;
+std::shared_ptr<FGAerodynamics>      GetAerodynamics(void)      const;
+std::shared_ptr<FGInertial>          GetInertial(void)          const;
+std::shared_ptr<FGGroundReactions>   GetGroundReactions(void)   const;
+std::shared_ptr<FGExternalReactions> GetExternalReactions(void) const;
+std::shared_ptr<FGBuoyantForces>     GetBuoyantForces(void)     const;
+std::shared_ptr<FGAircraft>          GetAircraft(void)          const;
+std::shared_ptr<FGPropagate>         GetPropagate(void)         const;
+std::shared_ptr<FGAuxiliary>         GetAuxiliary(void)         const;
+std::shared_ptr<FGInput>             GetInput(void)             const;
+std::shared_ptr<FGOutput>            GetOutput(void)            const;
+std::shared_ptr<FGInitialCondition>  GetIC(void)                const;
+std::shared_ptr<FGTrim>              GetTrim(void);
+std::shared_ptr<FGScript>            GetScript(void)            const;
+```
+
+## Output and logging
+
+```cpp
+bool SetOutputDirectives(const SGPath& fname);
+void SetLoggingRate(double rate);           // Hz
+bool SetOutputFileName(int n, const std::string& fname);
+std::string GetOutputFileName(int n) const;
+void DisableOutput(void);
+void EnableOutput(void);
+void ForceOutput(int idx = 0);
+```
+
+`SetOutputDirectives` must be called **before** loading an aircraft model to take effect.
+
+## Debug and diagnostics
+
+```cpp
+void SetDebugLevel(int level);
+int  GetDebugLevel(void) const;
+void PrintSimulationConfiguration(void) const;
+```
+
+Debug level is a bitmask:
+
+| Bit | Meaning |
+|---|---|
+| 0 | Silence all output |
+| 1 | Normal startup messages (default) |
+| 2 | Class instantiation messages |
+| 4 | Per-frame model execution messages |
+| 8 | Periodic runtime state dumps |
+| 16 | Out-of-range sanity check warnings |
+
+## Miscellaneous
+
+```cpp
+const std::string& GetModelName(void) const;  // loaded aircraft model name
+std::vector<std::string> EnumerateFDMs(void); // list all loaded FDM names
+size_t GetFDMCount(void) const;               // number of child FDMs
+void   SetChild(bool ch);                     // mark as a child instance
+void   SetHoldDown(bool hd);                  // hard hold-down (launch pad)
+bool   GetHoldDown(void) const;
+std::string GetPropulsionTankReport(void) const; // formatted tank status
+void SetTrimStatus(bool status);
+bool GetTrimStatus(void) const;
+```

@@ -1,0 +1,252 @@
+---
+title: "Scripting"
+description: "Automate JSBSim simulations using XML script files. Define initial conditions, sequence events by time or property conditions, and log output — all without writing code."
+---
+
+A JSBSim script is a self-contained XML file that specifies which aircraft to load, the initial conditions, how long the simulation runs, and what control inputs or property changes to apply as the simulation progresses. Scripts are the primary way to run repeatable, automated simulation cases.
+
+## Script file structure
+
+The root element is `<runscript>`. It contains three main parts:
+
+1. `<use>` — which aircraft and initialisation file to load
+2. Top-level `<property>` elements — initial property assignments
+3. `<run>` — simulation time span, step size, and the event list
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<runscript xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="http://jsbsim.sf.net/JSBSimScript.xsd"
+    name="C172-01A">
+
+  <use aircraft="c172r" initialize="reset00"/>
+
+  <run start="0.0" end="10" dt="0.008333">
+
+    <event name="Step aileron at 0.25 s">
+      <condition>simulation/sim-time-sec  ge  0.25</condition>
+      <set name="fcs/aileron-cmd-norm" action="FG_STEP" value="0.25" tc="0.25"/>
+    </event>
+
+    <event name="Exponential aileron at 0.5 s">
+      <condition>simulation/sim-time-sec  ge  0.5</condition>
+      <set name="fcs/aileron-cmd-norm" action="FG_EXP" type="FG_DELTA" value="0.5" tc="0.5"/>
+    </event>
+
+    <event name="Ramp rudder at 1.5 s">
+      <condition>simulation/sim-time-sec  ge  1.5</condition>
+      <set name="fcs/rudder-cmd-norm" action="FG_RAMP" type="FG_DELTA" value="0.5" tc="0.5"/>
+    </event>
+
+  </run>
+</runscript>
+```
+
+This is the real `scripts/c1721.xml` from the JSBSim repository.
+
+## Element reference
+
+### `<use>`
+
+```xml
+<use aircraft="c172r" initialize="reset00"/>
+```
+
+| Attribute | Description |
+|---|---|
+| `aircraft` | Aircraft directory name under `aircraft/` |
+| `initialize` | Name of the initial-conditions file (without `.xml`) inside that aircraft directory |
+
+### `<run>`
+
+```xml
+<run start="0.0" end="200" dt="0.00833333">
+```
+
+| Attribute | Description |
+|---|---|
+| `start` | Simulation start time in seconds |
+| `end` | Simulation end time in seconds |
+| `dt` | Integration time step in seconds. `0.008333` ≈ 120 Hz; `0.00833333` ≈ 120 Hz |
+
+### Top-level `<property>` elements
+
+Property elements inside `<run>` but outside any `<event>` block are applied before the simulation starts:
+
+```xml
+<run start="0.0" end="200" dt="0.00833333">
+  <property value="1"> simulation/run_id </property>
+  <property value="1"> fcs/left-brake-cmd-norm  </property>
+  <property value="1"> fcs/right-brake-cmd-norm </property>
+  <property value="3"> propulsion/magneto_cmd    </property>
+```
+
+### `<event>`
+
+An event fires once when its `<condition>` becomes true (unless `persistent="true"` is set, in which case it fires every time the condition is true).
+
+```xml
+<event name="engine start">
+  <description>Start the engine and set roll control to heading hold</description>
+  <condition> simulation/sim-time-sec >= 0.25 </condition>
+  <set name="fcs/throttle-cmd-norm"  value="1.0" action="FG_RAMP" tc="0.5"/>
+  <set name="propulsion/magneto_cmd" value="3"/>
+  <set name="propulsion/starter_cmd" value="1"/>
+</event>
+```
+
+#### `<condition>`
+
+A condition string compares two properties or a property and a value using relational operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `lt`, `le`, `gt`, `ge`, `eq`, `ne`. Compound conditions use `AND` / `OR`.
+
+```xml
+<condition> velocities/vc-kts >= 51 </condition>
+```
+
+#### `<delay>`
+
+An optional `<delay>` element (seconds) defers the event's `<set>` actions by a fixed time after the condition first becomes true:
+
+```xml
+<event name="Set autopilot for 6000 ft">
+  <condition> velocities/vc-kts >= 51 </condition>
+  <delay> 10.0 </delay>
+  <set name="ap/altitude_setpoint" value="6000.0"/>
+</event>
+```
+
+#### `<set>`
+
+Sets a property value, optionally with a shaping function:
+
+| `action` | Behaviour |
+|---|---|
+| *(none)* | Instantaneous step |
+| `FG_STEP` | Step at time `tc` |
+| `FG_RAMP` | Linear ramp over `tc` seconds |
+| `FG_EXP` | Exponential approach to target with time constant `tc` |
+
+The `type="FG_DELTA"` attribute means `value` is added to the current property value rather than replacing it.
+
+#### `<notify>`
+
+Prints a set of property values to stdout (or the log) when the event fires:
+
+```xml
+<notify>
+  <property caption="Cal. airspeed (kts):  "> velocities/vc-kts </property>
+  <property caption="Altitude (AGL, ft):   "> position/h-agl-ft </property>
+  <property caption="Propeller RPM:        "> propulsion/engine/propeller-rpm </property>
+</notify>
+```
+
+Set `simulation/notify-time-trigger` from within an event to produce periodic console output at a fixed interval.
+
+## Initial conditions
+
+The `initialize` attribute in `<use>` points to an XML file in the aircraft directory. A minimal initialisation file looks like this:
+
+```xml
+<initialize name="reset00">
+  <latitude  unit="DEG">  47.5 </latitude>
+  <longitude unit="DEG"> -122.3 </longitude>
+  <altitude  unit="FT">  5000 </altitude>
+  <heading   unit="DEG">  90  </heading>
+  <airspeed  unit="KTS"> 100  </airspeed>
+  <on-ground> 0 </on-ground>
+</initialize>
+```
+
+Common initial-condition properties you can also set from a script's top-level `<property>` elements:
+
+| Property | Description |
+|---|---|
+| `ic/lat-geod-deg` | Geodetic latitude (degrees) |
+| `ic/long-gc-deg` | Geocentric longitude (degrees) |
+| `ic/h-agl-ft` | Initial altitude above ground (ft) |
+| `ic/h-sl-ft` | Initial altitude above sea level (ft) |
+| `ic/psi-true-deg` | Heading (degrees true) |
+| `ic/vc-kts` | Calibrated airspeed (knots) |
+| `ic/vt-fps` | True airspeed (ft/s) |
+| `ic/gamma-deg` | Flight-path angle (degrees) |
+| `ic/alpha-deg` | Angle of attack (degrees) |
+| `ic/phi-deg` | Roll angle (degrees) |
+| `ic/theta-deg` | Pitch angle (degrees) |
+
+## Running a script
+
+<Tabs>
+  <Tab title="Command line">
+```bash
+# Run the c172 aileron doublet script
+JSBSim --script=scripts/c1721.xml
+
+# Override the output log file name
+JSBSim --script=scripts/c1723.xml --outputlogfile=my_output.csv
+
+# Set the JSBSim root path explicitly
+JSBSim --root=/path/to/jsbsim --script=scripts/c1723.xml
+```
+  </Tab>
+  <Tab title="Python">
+```python
+import jsbsim
+
+fdm = jsbsim.FGFDMExec('/path/to/jsbsim')
+
+# Load and run the script
+fdm.load_script('scripts/c1723.xml')
+fdm.run_ic()
+
+while fdm.run():
+    pass   # simulation runs until end time is reached
+
+print('Simulation complete.')
+print('Final altitude:', fdm['position/h-agl-ft'], 'ft')
+```
+  </Tab>
+</Tabs>
+
+## Persistent events
+
+Add `persistent="true"` to an event to make it fire every simulation step (or at every output rate cycle) that the condition is satisfied, rather than only the first time:
+
+```xml
+<event name="Time Notify" persistent="true">
+  <description>Output message at 1 minute intervals</description>
+  <condition> simulation/sim-time-sec >= simulation/notify-time-trigger </condition>
+  <set name="simulation/notify-time-trigger" value="60" type="FG_DELTA"/>
+  <notify>
+    <property caption="Cal. airspeed (kts):  "> velocities/vc-kts </property>
+    <property caption="Altitude (AGL, ft):   "> position/h-agl-ft </property>
+  </notify>
+</event>
+```
+
+This pattern — incrementing a trigger property by a fixed delta inside the event itself — produces periodic output at any interval you choose.
+
+## Takeoff run example (c1723.xml)
+
+The `scripts/c1723.xml` script demonstrates a complete takeoff and climb sequence. Its event chain is:
+
+<Steps>
+  <Step title="t ≥ 0.25 s — start engine">
+    Ramp throttle to full, set magnetos to both, engage starter, enable roll autopilot in heading-hold mode.
+  </Step>
+  <Step title="t ≥ 3.0 s — begin roll">
+    Release brakes, set flaps to 10°, command elevator to neutral.
+  </Step>
+  <Step title="vc ≥ 51 kts — rotate">
+    Set autopilot altitude target to 1 000 ft, engage altitude hold.
+  </Step>
+  <Step title="vc ≥ 51 kts + 10 s delay — climb to 6 000 ft">
+    Update altitude target to 6 000 ft, increase output log rate to 10 Hz.
+  </Step>
+  <Step title="h-agl ≥ 1 000 ft — retract flaps">
+    Remove flaps, set new guidance heading, write aircraft state file.
+  </Step>
+</Steps>
+
+<Tip>
+Use `<set name="simulation/write-state-file" value="1"/>` inside an event to dump the full simulation state to an XML file at that instant. You can then use that file as an `initialize` file for a subsequent run.
+</Tip>

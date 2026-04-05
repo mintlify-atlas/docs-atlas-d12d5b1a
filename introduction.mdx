@@ -1,0 +1,55 @@
+---
+title: "Introduction"
+description: "JSBSim is a nonlinear 6-DoF Flight Dynamics Model written in C++. It models the physics of aircraft, rockets, and other flight vehicles — from aerodynamics to propulsion to the Earth's own rotation."
+---
+
+JSBSim computes the forces and moments acting on a vehicle and integrates the full nonlinear equations of motion at each simulation step. You configure every subsystem — aerodynamics, propulsion, flight control, landing gear — through XML files, and drive the simulation through a C++ API, a Python module, a MATLAB S-Function, or an Unreal Engine plugin.
+
+## Key capabilities
+
+- **Nonlinear 6-DoF dynamics** — Full equations of motion with Coriolis and centrifugal acceleration modeled.
+- **Accurate Earth model** — WGS84 oblate spheroid geometry, geodetic coordinates, and the International Standard Atmosphere (ISA 1976).
+- **XML-driven configuration** — Aircraft geometry, aerodynamics, propulsion, flight control systems, and simulation scripts are all defined in human-readable XML.
+- **Configurable flight control system** — PID controllers, actuators, filters, sensors, switches, and schedulers connected as a signal-flow graph.
+- **Rich propulsion models** — Piston, turbine, turboprop, rocket, electric, and rotor models.
+- **Flexible data output** — Write simulation state to screen, CSV files, sockets, or the FlightGear native protocol.
+- **Standalone or embedded** — Run as a console-mode batch simulator or embed it inside another application.
+
+## Language bindings
+
+JSBSim exposes its full feature set through three official bindings in addition to the native C++ API.
+
+| Binding | Distribution |
+|---|---|
+| **Python** | Binary wheels on PyPI (`pip install jsbsim`) and conda-forge |
+| **MATLAB / Simulink** | S-Function shipped with the Windows installer and source tree |
+| **Unreal Engine** | Plugin in the `UnrealEngine/` directory of the repository |
+
+## Real-world usage
+
+JSBSim is used across flight simulation, autopilot development, and AI research.
+
+- **FlightGear**, **OutTerra**, and **Skybolt** use JSBSim as their primary physics engine.
+- **ArduPilot** and **PX4 Autopilot** use JSBSim for Software-In-The-Loop (SITL) drone testing.
+- **DARPA's AlphaDogfight Trials** featured a JSBSim-backed agent that defeated a graduate of the U.S. Air Force's F-16 Weapons Instructor Course in match play.
+- **NASA** verified JSBSim against six in-house simulation tools and found agreement across all published test cases.
+- **Unreal Engine's Antoinette Project** uses JSBSim to power next-generation flight simulator tooling.
+
+JSBSim also has more than 1,000 citations in academic literature (Google Scholar, as of May 2025) and is licensed under the LGPL 2.1.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install via pip, conda, a Windows installer, or Ubuntu packages.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first simulation in minutes using Python or the command line.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Understand the FDM executive, simulation models, and the property system.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations/python">
+    Connect JSBSim to Python, C++, MATLAB/Simulink, or Unreal Engine.
+  </Card>
+</CardGroup>
